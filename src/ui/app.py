@@ -82,10 +82,7 @@ class SnakeApp:
             self._game.tick(direction)
 
     def _render(self) -> None:
-        self._control_panel.draw(
-            self._controller.get_active_direction(),
-            self._controller.last_snapshot,
-        )
+        self._control_panel.draw(self._controller.last_snapshot)
         self._renderer.draw()
 
         self._screen.blit(self._panel_surface, (0, 0))
