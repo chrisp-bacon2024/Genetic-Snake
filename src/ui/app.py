@@ -1,9 +1,11 @@
 import pygame
 
 import config
-from controllers.keyboard_controller import KeyboardController
+from controllers.ai_controller import AIController
+from evolution.genome import Genome
 from game.game import Game
 from models.grid import Grid
+from neural.network import NeuralNetwork
 
 from .control_panel import ControlPanel
 from .game_renderer import GameRenderer
@@ -23,7 +25,9 @@ class SnakeApp:
 
         grid = Grid(config.GRID_COLS, config.GRID_ROWS)
         self._game = Game(grid)
-        self._controller = KeyboardController(self._game.snake.direction)
+        self._genome = Genome.random(NeuralNetwork.genome_length())
+        self._network = NeuralNetwork.from_genome(self._genome)
+        self._controller = AIController(self._game, self._network)
         self._control_panel = ControlPanel(panel_surface)
         self._renderer = GameRenderer(game_surface, self._game)
 
@@ -32,6 +36,8 @@ class SnakeApp:
         self._tick_accumulator = 0.0
         self._tick_interval = 1.0 / config.TICKS_PER_SECOND
         self._running = True
+
+        self._controller.get_direction()
 
     def run(self) -> None:
         while self._running:
@@ -57,7 +63,13 @@ class SnakeApp:
 
     def _restart(self) -> None:
         self._game.reset()
-        self._controller.reset()
+        if config.RESTART_NEW_GENOME:
+            self._genome = Genome.random(NeuralNetwork.genome_length())
+            self._network = NeuralNetwork.from_genome(self._genome)
+            self._controller = AIController(self._game, self._network)
+        else:
+            self._controller.reset()
+        self._controller.get_direction()
 
     def _update_simulation(self, delta: float) -> None:
         if not self._game.alive:
@@ -70,8 +82,10 @@ class SnakeApp:
             self._game.tick(direction)
 
     def _render(self) -> None:
-        active_direction = self._controller.get_active_direction()
-        self._control_panel.draw(active_direction)
+        self._control_panel.draw(
+            self._controller.get_active_direction(),
+            self._controller.last_snapshot,
+        )
         self._renderer.draw()
 
         self._screen.blit(self._panel_surface, (0, 0))

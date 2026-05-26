@@ -1,7 +1,10 @@
 import pygame
 
 import config
+from controllers.ai_controller import NetworkSnapshot
 from models.direction import Direction
+
+from .network_visualizer import NetworkVisualizer
 
 
 class ControlPanel:
@@ -9,8 +12,13 @@ class ControlPanel:
         self._surface = surface
         self._font = pygame.font.SysFont("consolas", 18)
         self._title_font = pygame.font.SysFont("consolas", 22, bold=True)
+        self._network_visualizer = NetworkVisualizer(surface)
 
-    def draw(self, active_direction: Direction | None) -> None:
+    def draw(
+        self,
+        active_direction: Direction | None,
+        snapshot: NetworkSnapshot,
+    ) -> None:
         self._surface.fill(config.COLOR_PANEL)
 
         title = self._title_font.render("Controls", True, config.COLOR_TEXT)
@@ -21,23 +29,14 @@ class ControlPanel:
         for direction, rect in layout.items():
             self._draw_button(direction, rect, active_direction == direction)
 
-        hint_lines = [
-            "Arrow keys to move",
-            "R to restart",
-            "Esc to quit",
-        ]
-        y = config.WINDOW_HEIGHT - 24 - len(hint_lines) * 22
-        for line in hint_lines:
-            text = self._font.render(line, True, config.COLOR_TEXT_DIM)
-            text_rect = text.get_rect(centerx=config.PANEL_WIDTH // 2, top=y)
-            self._surface.blit(text, text_rect)
-            y += 22
+        self._network_visualizer.draw(snapshot)
+        self._draw_hints(self._network_visualizer.bottom_y)
 
     def _button_layout(self) -> dict[Direction, pygame.Rect]:
         size = config.CONTROL_BUTTON_SIZE
         gap = config.CONTROL_BUTTON_GAP
         center_x = config.PANEL_WIDTH // 2
-        cluster_top = 100
+        cluster_top = 56
 
         up_rect = pygame.Rect(0, 0, size, size)
         up_rect.center = (center_x, cluster_top + size // 2)
@@ -88,3 +87,16 @@ class ControlPanel:
             Direction.RIGHT: ">",
         }
         return labels[direction]
+
+    def _draw_hints(self, start_y: int) -> None:
+        hint_lines = [
+            "AI-controlled",
+            "R to restart",
+            "Esc to quit",
+        ]
+        y = max(start_y, config.WINDOW_HEIGHT - 24 - len(hint_lines) * config.HINT_LINE_HEIGHT)
+        for line in hint_lines:
+            text = self._font.render(line, True, config.COLOR_TEXT_DIM)
+            text_rect = text.get_rect(centerx=config.PANEL_WIDTH // 2, top=y)
+            self._surface.blit(text, text_rect)
+            y += config.HINT_LINE_HEIGHT
