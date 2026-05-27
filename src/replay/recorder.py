@@ -85,6 +85,7 @@ class GameRecorder:
             alive=game.alive,
             ate_food=tick_result.ate_food,
             died=tick_result.died,
+            starved=tick_result.starved,
         )
         self._frames.append(frame)
 

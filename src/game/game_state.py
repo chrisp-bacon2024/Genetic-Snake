@@ -9,6 +9,7 @@ class TickResult:
 
     ate_food: bool = False
     died: bool = False
+    starved: bool = False
 
 
 @dataclass
@@ -17,3 +18,5 @@ class GameState:
 
     score: int = 0
     alive: bool = True
+    steps_since_food: int = 0
+    starved: bool = False

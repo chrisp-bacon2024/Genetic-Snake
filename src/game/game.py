@@ -5,6 +5,7 @@ This module has no pygame imports so the same rules can run headless during
 genetic-algorithm training.
 """
 
+import config
 from models.direction import Direction
 from models.food import Food
 from models.grid import Grid
@@ -48,6 +49,11 @@ class Game:
     def alive(self) -> bool:
         return self._state.alive
 
+    @property
+    def starved(self) -> bool:
+        """True if the snake died from going too long without eating."""
+        return self._state.starved
+
     def reset(self) -> None:
         """Start a new game on the same grid (score 0, snake at center)."""
         self._state = GameState()
@@ -60,7 +66,8 @@ class Game:
         1. Apply direction (optional)
         2. Move snake head
         3. Die on wall or self collision
-        4. Eat food → grow, increment score, respawn food
+        4. Eat food → grow, increment score, respawn food, reset starvation counter
+        5. Die if too many ticks pass without eating (kills infinite spin loops)
         """
         if not self._state.alive:
             return TickResult()
@@ -81,9 +88,17 @@ class Game:
         if new_head == self._food.position:
             self._snake.grow()
             self._state.score += 1
+            self._state.steps_since_food = 0
             occupied = set(self._snake.body)
             self._food.respawn(self._grid, occupied)
             return TickResult(ate_food=True)
+
+        self._state.steps_since_food += 1
+        limit = config.starvation_limit(len(self._snake.body), self._grid.width, self._grid.height)
+        if self._state.steps_since_food >= limit:
+            self._state.alive = False
+            self._state.starved = True
+            return TickResult(died=True, starved=True)
 
         return TickResult()
 

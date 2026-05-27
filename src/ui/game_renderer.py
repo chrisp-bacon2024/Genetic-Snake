@@ -26,6 +26,11 @@ class GameRenderer:
         if not self._game.alive:
             self._draw_game_over()
 
+    def _death_message(self) -> tuple[str, str]:
+        if self._game.starved:
+            return "Starved", "Press R to restart"
+        return "Game Over", "Press R to restart"
+
     def _draw_grid(self) -> None:
         grid_width = config.GRID_COLS * config.CELL_SIZE
         for col in range(config.GRID_COLS + 1):
@@ -74,8 +79,9 @@ class GameRenderer:
         overlay.fill((0, 0, 0, 140))
         self._surface.blit(overlay, (0, 0))
 
-        game_over = self._overlay_font.render("Game Over", True, config.COLOR_GAME_OVER)
-        restart = self._score_font.render("Press R to restart", True, config.COLOR_TEXT)
+        title, subtitle = self._death_message()
+        game_over = self._overlay_font.render(title, True, config.COLOR_GAME_OVER)
+        restart = self._score_font.render(subtitle, True, config.COLOR_TEXT)
         game_over_rect = game_over.get_rect(
             center=(grid_width // 2, config.WINDOW_HEIGHT // 2 - 16)
         )

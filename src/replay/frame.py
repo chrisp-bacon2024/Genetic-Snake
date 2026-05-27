@@ -32,6 +32,7 @@ class ReplayFrame:
     alive: bool
     ate_food: bool
     died: bool
+    starved: bool = False
 
     def to_dict(self) -> dict:
         """Serialize to JSON-friendly primitives."""
@@ -47,6 +48,7 @@ class ReplayFrame:
             "alive": self.alive,
             "ate_food": self.ate_food,
             "died": self.died,
+            "starved": self.starved,
         }
 
     @classmethod
@@ -64,4 +66,5 @@ class ReplayFrame:
             alive=bool(data["alive"]),
             ate_food=bool(data["ate_food"]),
             died=bool(data["died"]),
+            starved=bool(data.get("starved", False)),
         )
