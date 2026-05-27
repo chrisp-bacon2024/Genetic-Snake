@@ -1,3 +1,10 @@
+"""
+Convert a live Game into 24 normalized vision features for the neural network.
+
+Eight rays are cast relative to the snake heading. Each ray contributes three
+values: Manhattan distance (in steps) to wall, body, and food, normalized to [0, 1].
+"""
+
 import numpy as np
 
 import config
@@ -7,12 +14,17 @@ from models.position import Position
 
 
 class GameStateEncoder:
-    """Encodes game state as 24 normalized vision features (8 rays x 3 targets)."""
+    """
+    Encodes game state as a 24-element float vector.
+
+    Layout: for each of 8 rays → [wall_dist, body_dist, food_dist].
+    """
 
     def __init__(self, max_steps: int | None = None) -> None:
         self._max_steps = max_steps or max(config.GRID_COLS, config.GRID_ROWS)
 
     def encode(self, game: Game) -> np.ndarray:
+        """Build the input vector from the current board state."""
         head = game.snake.head()
         body = set(game.snake.body[1:])
         food_pos = game.food.position
@@ -42,6 +54,12 @@ class GameStateEncoder:
         body: set[Position],
         food_pos: Position,
     ) -> tuple[int, int, int]:
+        """
+        Walk cell-by-cell along (dx, dy) until leaving the grid.
+
+        Records step count to the first wall, body segment, and food encountered.
+        If a target is never hit, returns max_steps for that target.
+        """
         wall_steps = self._max_steps
         body_steps = self._max_steps
         food_steps = self._max_steps

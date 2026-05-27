@@ -1,3 +1,9 @@
+"""
+Feedforward neural network mapped to/from a Genome.
+
+Topology: 24 inputs → 16 hidden (ReLU) → 4 outputs (direction logits).
+"""
+
 from dataclasses import dataclass
 
 import numpy as np
@@ -8,6 +14,8 @@ from evolution.genome import Genome
 
 @dataclass(frozen=True, slots=True)
 class ForwardResult:
+    """Activations produced by one forward pass (used for UI and replay recording)."""
+
     inputs: np.ndarray
     hidden: np.ndarray
     outputs: np.ndarray
@@ -15,9 +23,10 @@ class ForwardResult:
 
 class NeuralNetwork:
     """
-    Feedforward network: 24 -> 16 (ReLU) -> 4
+    Two-layer network whose weights are stored in a flat Genome.
 
-    Genome layout: [W1 flat (384), b1 (16), W2 flat (64), b2 (4)] = 468 genes
+    Genome layout (468 genes total):
+        W1: input×hidden (384), b1 (16), W2: hidden×output (64), b2 (4)
     """
 
     def __init__(
@@ -34,6 +43,7 @@ class NeuralNetwork:
 
     @classmethod
     def genome_length(cls) -> int:
+        """Number of floats required in a Genome for this architecture."""
         input_size = config.NN_INPUT_SIZE
         hidden_size = config.NN_HIDDEN_SIZE
         output_size = config.NN_OUTPUT_SIZE
@@ -46,6 +56,7 @@ class NeuralNetwork:
 
     @classmethod
     def from_genome(cls, genome: Genome) -> "NeuralNetwork":
+        """Unpack a flat gene array into weight matrices and bias vectors."""
         expected = cls.genome_length()
         if genome.genes.size != expected:
             raise ValueError(f"Expected genome length {expected}, got {genome.genes.size}.")
@@ -71,6 +82,7 @@ class NeuralNetwork:
         return cls(w1, b1, w2, b2)
 
     def to_genome(self) -> Genome:
+        """Serialize current weights back into a Genome."""
         genes = np.concatenate(
             [
                 self._w1.reshape(-1),
@@ -82,6 +94,12 @@ class NeuralNetwork:
         return Genome(genes)
 
     def forward(self, inputs: np.ndarray) -> ForwardResult:
+        """
+        Run one forward pass.
+
+        hidden = ReLU(inputs @ W1 + b1)
+        outputs = hidden @ W2 + b2  (raw logits, no softmax)
+        """
         x = np.asarray(inputs, dtype=np.float64)
         hidden_raw = x @ self._w1 + self._b1
         hidden = np.maximum(hidden_raw, 0.0)

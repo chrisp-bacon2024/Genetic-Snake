@@ -1,3 +1,10 @@
+"""
+Keyboard-driven snake control (legacy / debugging).
+
+Not wired in the main app — the snake is AI-controlled. Kept so human play
+can be re-enabled without rewriting the Controller abstraction.
+"""
+
 import pygame
 
 from models.direction import Direction
@@ -6,6 +13,8 @@ from .controller import Controller
 
 
 class KeyboardController(Controller):
+    """Maps arrow keys to directions with buffering and highlight-on-press."""
+
     _KEY_TO_DIRECTION = {
         pygame.K_UP: Direction.UP,
         pygame.K_DOWN: Direction.DOWN,
@@ -37,7 +46,6 @@ class KeyboardController(Controller):
     def get_active_direction(self) -> Direction | None:
         if not self._pressed_keys:
             return self._current_direction
-        # Most recently pressed key wins for highlight display.
         for key in (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT):
             if key in self._pressed_keys:
                 return self._KEY_TO_DIRECTION[key]

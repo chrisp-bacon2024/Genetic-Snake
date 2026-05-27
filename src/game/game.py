@@ -1,3 +1,10 @@
+"""
+Core Snake simulation: movement, collisions, scoring, and reset.
+
+This module has no pygame imports so the same rules can run headless during
+genetic-algorithm training.
+"""
+
 from models.direction import Direction
 from models.food import Food
 from models.grid import Grid
@@ -7,6 +14,13 @@ from .game_state import GameState, TickResult
 
 
 class Game:
+    """
+    Owns the snake, food, grid, score, and alive flag.
+
+    Call tick(direction) once per simulation step. The controller (human or AI)
+    supplies the direction; Game applies rules and returns what happened.
+    """
+
     def __init__(self, grid: Grid) -> None:
         self._grid = grid
         self._state = GameState()
@@ -35,10 +49,19 @@ class Game:
         return self._state.alive
 
     def reset(self) -> None:
+        """Start a new game on the same grid (score 0, snake at center)."""
         self._state = GameState()
         self._reset_entities()
 
     def tick(self, direction: Direction | None = None) -> TickResult:
+        """
+        Advance one simulation step.
+
+        1. Apply direction (optional)
+        2. Move snake head
+        3. Die on wall or self collision
+        4. Eat food → grow, increment score, respawn food
+        """
         if not self._state.alive:
             return TickResult()
 

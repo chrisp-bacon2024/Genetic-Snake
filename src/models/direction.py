@@ -1,13 +1,24 @@
+"""
+Cardinal movement directions and relative vision-ray helpers.
+
+Directions map to (dx, dy) grid deltas. relative_ray_deltas() returns eight step
+vectors (forward, diagonals, sideways, backward) based on where the snake is facing.
+These rays feed the GameStateEncoder.
+"""
+
 from enum import Enum
 
 
 class Direction(Enum):
+    """One of four grid movement directions."""
+
     UP = (0, -1)
     DOWN = (0, 1)
     LEFT = (-1, 0)
     RIGHT = (1, 0)
 
     def opposite(self) -> "Direction":
+        """Return the 180° reverse of this direction."""
         opposites = {
             Direction.UP: Direction.DOWN,
             Direction.DOWN: Direction.UP,
@@ -17,15 +28,22 @@ class Direction(Enum):
         return opposites[self]
 
     def to_delta(self) -> tuple[int, int]:
+        """Return (dx, dy) grid offset for one step in this direction."""
         return self.value
 
     @classmethod
     def from_name(cls, name: str) -> "Direction":
+        """Parse a direction from its enum name (e.g. ``"UP"``)."""
         return cls[name]
 
 
 def relative_ray_deltas(facing: Direction) -> list[tuple[int, int]]:
-    """Return 8 (dx, dy) ray directions relative to the snake heading."""
+    """
+    Return eight (dx, dy) unit steps relative to the snake's current heading.
+
+    Order: forward, forward-right, right, back-right, back, back-left, left,
+    forward-left. Used by GameStateEncoder to cast vision rays.
+    """
     forward_x, forward_y = facing.to_delta()
     right_x, right_y = (-forward_y, forward_x)
     back_x, back_y = (-forward_x, -forward_y)

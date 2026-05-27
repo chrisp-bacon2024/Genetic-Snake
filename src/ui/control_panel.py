@@ -1,3 +1,5 @@
+"""Left sidebar: neural-network diagram and keyboard hints."""
+
 import pygame
 
 import config
@@ -7,12 +9,15 @@ from .network_visualizer import NetworkVisualizer
 
 
 class ControlPanel:
+    """Draws the panel surface passed in at construction time."""
+
     def __init__(self, surface: pygame.Surface) -> None:
         self._surface = surface
         self._font = pygame.font.SysFont("consolas", 18)
         self._network_visualizer = NetworkVisualizer(surface)
 
     def draw(self, snapshot: NetworkSnapshot) -> None:
+        """Fill the panel and render the network diagram plus footer hints."""
         self._surface.fill(config.COLOR_PANEL)
         self._network_visualizer.draw(snapshot)
         self._draw_hints(self._network_visualizer.bottom_y)

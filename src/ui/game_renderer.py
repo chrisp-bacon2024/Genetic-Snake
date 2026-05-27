@@ -1,3 +1,5 @@
+"""Draws the Snake playfield: grid lines, snake, food, score, and game-over overlay."""
+
 import pygame
 
 import config
@@ -5,6 +7,8 @@ from game.game import Game
 
 
 class GameRenderer:
+    """Renders game state onto a dedicated surface (right side of the window)."""
+
     def __init__(self, surface: pygame.Surface, game: Game) -> None:
         self._surface = surface
         self._game = game
@@ -12,6 +16,7 @@ class GameRenderer:
         self._overlay_font = pygame.font.SysFont("consolas", 28, bold=True)
 
     def draw(self) -> None:
+        """Redraw the full game area for the current frame."""
         self._surface.fill(config.COLOR_BACKGROUND)
         self._draw_grid()
         self._draw_food()

@@ -1,3 +1,11 @@
+"""
+Live diagram of the neural network: input rays, hidden layer, output arrows.
+
+Drawn on the left sidebar. Input dot brightness reflects normalized vision
+distances; hidden/output brightness reflects activation strength. Output arrows
+replace separate direction buttons — the chosen move glows bright blue.
+"""
+
 import pygame
 import numpy as np
 
@@ -7,6 +15,8 @@ from models.direction import Direction
 
 
 class NetworkVisualizer:
+    """Renders the Input → Hidden → Output panel from a NetworkSnapshot."""
+
     _INPUT_LEGEND_HEADER = "Distance to"
     _INPUT_LABELS = ("Wall", "Body", "Food")
     _INPUT_LEGEND_GAP = 6

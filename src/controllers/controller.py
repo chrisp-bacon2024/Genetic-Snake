@@ -1,12 +1,20 @@
+"""
+Abstract interface for anything that chooses snake direction each tick.
+
+Implementations: KeyboardController (human), AIController (neural net).
+"""
+
 from abc import ABC, abstractmethod
 
 from models.direction import Direction
 
 
 class Controller(ABC):
+    """Strategy object that maps input or inference to a Direction."""
+
     @abstractmethod
     def update(self, events: list) -> None:
-        """Process input events for the current frame."""
+        """Process pygame events for the current frame (may be no-op for AI)."""
 
     @abstractmethod
     def get_direction(self) -> Direction | None:
@@ -14,7 +22,7 @@ class Controller(ABC):
 
     @abstractmethod
     def get_active_direction(self) -> Direction | None:
-        """Direction currently highlighted (key held or AI choice)."""
+        """Direction currently shown in the UI (held key or last AI choice)."""
 
     def reset(self) -> None:
-        """Reset controller state after a game restart."""
+        """Clear controller state after a game restart."""

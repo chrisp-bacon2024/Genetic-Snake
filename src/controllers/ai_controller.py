@@ -1,3 +1,9 @@
+"""
+Neural-network controller: encodes game state, runs forward pass, picks direction.
+
+Also produces NetworkSnapshot each tick for the UI panel and GameRecorder.
+"""
+
 from dataclasses import dataclass
 
 import numpy as np
@@ -12,6 +18,12 @@ from neural.network import ForwardResult, NeuralNetwork
 
 @dataclass(frozen=True, slots=True)
 class NetworkSnapshot:
+    """
+    All neural activations and the chosen move for one decision step.
+
+    Stored in replays and drawn by NetworkVisualizer.
+    """
+
     inputs: np.ndarray
     hidden: np.ndarray
     outputs: np.ndarray
@@ -19,6 +31,13 @@ class NetworkSnapshot:
 
 
 class AIController(Controller):
+    """
+    Drives the snake from a NeuralNetwork.
+
+    Output index mapping (must match config.OUTPUT_DIRECTIONS):
+        0 → UP, 1 → DOWN, 2 → LEFT, 3 → RIGHT
+    """
+
     _OUTPUT_TO_DIRECTION = {
         0: Direction.UP,
         1: Direction.DOWN,
@@ -35,6 +54,7 @@ class AIController(Controller):
 
     @property
     def last_snapshot(self) -> NetworkSnapshot:
+        """Most recent forward pass (for rendering and replay frames)."""
         return self._last_snapshot
 
     @property
@@ -45,6 +65,11 @@ class AIController(Controller):
         pass
 
     def get_direction(self) -> Direction | None:
+        """
+        Encode current game → forward pass → pick highest valid output.
+
+        Updates last_snapshot. Returns last direction if game is already over.
+        """
         if not self._game.alive:
             return self._last_direction
 
@@ -72,6 +97,7 @@ class AIController(Controller):
         result: ForwardResult,
         current_direction: Direction,
     ) -> Direction:
+        """Argmax over outputs, skipping any 180° reversal."""
         ranked = np.argsort(result.outputs)[::-1]
         for index in ranked:
             direction = self._OUTPUT_TO_DIRECTION[int(index)]
