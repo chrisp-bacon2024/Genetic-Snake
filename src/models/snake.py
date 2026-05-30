@@ -28,6 +28,19 @@ class Snake:
         """All segments from head to tail."""
         return tuple(self._body)
 
+    @property
+    def tail_direction(self) -> Direction:
+        """
+        Direction the tail trails (from the segment before the tail toward the tail).
+
+        Falls back to the head heading for a length-1 snake where no tail exists.
+        """
+        if len(self._body) < 2:
+            return self._direction
+        tail = self._body[-1]
+        before_tail = self._body[-2]
+        return Direction.from_delta(tail.x - before_tail.x, tail.y - before_tail.y)
+
     def head(self) -> Position:
         return self._body[0]
 

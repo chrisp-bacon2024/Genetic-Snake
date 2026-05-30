@@ -25,7 +25,7 @@ class NetworkSnapshot:
     """
 
     inputs: np.ndarray
-    hidden: np.ndarray
+    hidden_layers: tuple[np.ndarray, ...]
     outputs: np.ndarray
     chosen_direction: Direction
 
@@ -79,7 +79,7 @@ class AIController(Controller):
         self._last_direction = direction
         self._last_snapshot = NetworkSnapshot(
             inputs=result.inputs,
-            hidden=result.hidden,
+            hidden_layers=result.hidden_layers,
             outputs=result.outputs,
             chosen_direction=direction,
         )
@@ -108,7 +108,7 @@ class AIController(Controller):
     def _empty_snapshot(self) -> NetworkSnapshot:
         return NetworkSnapshot(
             inputs=np.zeros(config.NN_INPUT_SIZE),
-            hidden=np.zeros(config.NN_HIDDEN_SIZE),
+            hidden_layers=tuple(np.zeros(size) for size in config.NN_HIDDEN_SIZES),
             outputs=np.zeros(config.NN_OUTPUT_SIZE),
             chosen_direction=self._game.snake.direction,
         )

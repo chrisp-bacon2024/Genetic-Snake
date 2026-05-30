@@ -24,7 +24,7 @@ class ReplayFrame:
     tick: int
     direction: Direction
     inputs: np.ndarray
-    hidden: np.ndarray
+    hidden_layers: tuple[np.ndarray, ...]
     outputs: np.ndarray
     snake: tuple[tuple[int, int], ...]
     food: tuple[int, int]
@@ -40,7 +40,7 @@ class ReplayFrame:
             "tick": self.tick,
             "direction": self.direction.name,
             "inputs": self.inputs.tolist(),
-            "hidden": self.hidden.tolist(),
+            "hidden_layers": [layer.tolist() for layer in self.hidden_layers],
             "outputs": self.outputs.tolist(),
             "snake": [list(segment) for segment in self.snake],
             "food": list(self.food),
@@ -53,12 +53,18 @@ class ReplayFrame:
 
     @classmethod
     def from_dict(cls, data: dict) -> "ReplayFrame":
-        """Reconstruct a frame from loaded JSON."""
+        """Reconstruct a frame from loaded JSON (handles legacy single-hidden format)."""
+        if "hidden_layers" in data:
+            hidden_layers = tuple(
+                np.asarray(layer, dtype=np.float64) for layer in data["hidden_layers"]
+            )
+        else:
+            hidden_layers = (np.asarray(data.get("hidden", []), dtype=np.float64),)
         return cls(
             tick=int(data["tick"]),
             direction=Direction[data["direction"]],
             inputs=np.asarray(data["inputs"], dtype=np.float64),
-            hidden=np.asarray(data["hidden"], dtype=np.float64),
+            hidden_layers=hidden_layers,
             outputs=np.asarray(data["outputs"], dtype=np.float64),
             snake=tuple(tuple(segment) for segment in data["snake"]),
             food=tuple(data["food"]),

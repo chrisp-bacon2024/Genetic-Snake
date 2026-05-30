@@ -36,6 +36,21 @@ class Direction(Enum):
         """Parse a direction from its enum name (e.g. ``"UP"``)."""
         return cls[name]
 
+    @classmethod
+    def from_delta(cls, dx: int, dy: int) -> "Direction":
+        """
+        Map a one-step (dx, dy) offset onto its cardinal Direction.
+
+        Non-unit deltas are reduced to their sign first so segment-to-segment
+        vectors (always axis-aligned and length one in this game) resolve cleanly.
+        """
+        sx = (dx > 0) - (dx < 0)
+        sy = (dy > 0) - (dy < 0)
+        for direction in cls:
+            if direction.value == (sx, sy):
+                return direction
+        raise ValueError(f"No direction matches delta ({dx}, {dy}).")
+
 
 def relative_ray_deltas(facing: Direction) -> list[tuple[int, int]]:
     """

@@ -1,27 +1,30 @@
 """
-Convert a live Game into 24 normalized vision features for the neural network.
+Convert a live Game into 32 vision features for the neural network.
 
-Eight rays are cast relative to the snake heading. Each ray contributes three
-values: Manhattan distance (in steps) to wall, body, and food, normalized to [0, 1].
+Layout (32 features):
+  - 8 rays cast relative to the snake heading, each contributing 3 inverse-distance
+    values [wall, food, body] where close = high signal (1.0 adjacent, ~0 far, 0 absent).
+  - 4 one-hot head-direction features (UP, DOWN, LEFT, RIGHT).
+  - 4 one-hot tail-direction features (UP, DOWN, LEFT, RIGHT).
+
+Inverse distance (rather than raw normalized distance) puts the strongest signal on
+the nearest obstacle/food, and the dense direction one-hots give an always-present
+sense of heading and body layout.
 """
 
 import numpy as np
 
 import config
 from game.game import Game
-from models.direction import relative_ray_deltas
+from models.direction import Direction, relative_ray_deltas
 from models.position import Position
+
+# Absolute direction order for the one-hot features.
+_DIRECTION_ORDER = (Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT)
 
 
 class GameStateEncoder:
-    """
-    Encodes game state as a 24-element float vector.
-
-    Layout: for each of 8 rays → [wall_dist, body_dist, food_dist].
-    """
-
-    def __init__(self, max_steps: int | None = None) -> None:
-        self._max_steps = max_steps or max(config.GRID_COLS, config.GRID_ROWS)
+    """Encodes game state as a 32-element float vector in [0, 1]."""
 
     def encode(self, game: Game) -> np.ndarray:
         """Build the input vector from the current board state."""
@@ -32,16 +35,15 @@ class GameStateEncoder:
         features: list[float] = []
 
         for dx, dy in relative_ray_deltas(game.snake.direction):
-            wall_steps, body_steps, food_steps = self._cast_ray(
+            wall_steps, food_steps, body_steps = self._cast_ray(
                 head, dx, dy, grid, body, food_pos
             )
-            features.extend(
-                [
-                    self._normalize(wall_steps),
-                    self._normalize(body_steps),
-                    self._normalize(food_steps),
-                ]
-            )
+            features.append(self._inverse(wall_steps))
+            features.append(self._inverse(food_steps))
+            features.append(self._inverse(body_steps))
+
+        features.extend(self._one_hot(game.snake.direction))
+        features.extend(self._one_hot(game.snake.tail_direction))
 
         return np.asarray(features, dtype=np.float64)
 
@@ -53,16 +55,15 @@ class GameStateEncoder:
         grid,
         body: set[Position],
         food_pos: Position,
-    ) -> tuple[int, int, int]:
+    ) -> tuple[int | None, int | None, int | None]:
         """
         Walk cell-by-cell along (dx, dy) until leaving the grid.
 
-        Records step count to the first wall, body segment, and food encountered.
-        If a target is never hit, returns max_steps for that target.
+        Returns step counts to the first wall, food, and body segment encountered;
+        None when that target is never hit along the ray (food/body only).
         """
-        wall_steps = self._max_steps
-        body_steps = self._max_steps
-        food_steps = self._max_steps
+        food_steps: int | None = None
+        body_steps: int | None = None
 
         steps = 0
         x, y = head.x, head.y
@@ -73,16 +74,20 @@ class GameStateEncoder:
             pos = Position(x, y)
 
             if not grid.in_bounds(pos):
-                wall_steps = steps
-                break
+                return steps, food_steps, body_steps
 
-            if pos in body and body_steps == self._max_steps:
-                body_steps = steps
-
-            if pos == food_pos and food_steps == self._max_steps:
+            if food_steps is None and pos == food_pos:
                 food_steps = steps
 
-        return wall_steps, body_steps, food_steps
+            if body_steps is None and pos in body:
+                body_steps = steps
 
-    def _normalize(self, steps: int) -> float:
-        return min(steps / self._max_steps, 1.0)
+    def _one_hot(self, direction: Direction) -> list[float]:
+        """One-hot encode a cardinal direction in _DIRECTION_ORDER."""
+        return [1.0 if direction is d else 0.0 for d in _DIRECTION_ORDER]
+
+    def _inverse(self, steps: int | None) -> float:
+        """Inverse distance: adjacent -> 1.0, far -> ~0, absent (None) -> 0.0."""
+        if steps is None or steps <= 0:
+            return 0.0
+        return 1.0 / float(steps)

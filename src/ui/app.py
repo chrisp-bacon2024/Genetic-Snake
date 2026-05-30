@@ -9,7 +9,6 @@ import pygame
 
 import config
 from controllers.ai_controller import AIController
-from evolution.genome import Genome
 from game.game import Game
 from models.grid import Grid
 from neural.network import NeuralNetwork
@@ -40,7 +39,7 @@ class SnakeApp:
 
         grid = Grid(config.GRID_COLS, config.GRID_ROWS)
         self._game = Game(grid)
-        self._genome = Genome.random(NeuralNetwork.genome_length())
+        self._genome = NeuralNetwork.random_genome()
         self._network = NeuralNetwork.from_genome(self._genome)
         self._controller = AIController(self._game, self._network)
         self._recorder = GameRecorder()
@@ -90,7 +89,7 @@ class SnakeApp:
     def _restart(self) -> None:
         self._game.reset()
         if config.RESTART_NEW_GENOME:
-            self._genome = Genome.random(NeuralNetwork.genome_length())
+            self._genome = NeuralNetwork.random_genome()
             self._network = NeuralNetwork.from_genome(self._genome)
             self._controller = AIController(self._game, self._network)
         else:

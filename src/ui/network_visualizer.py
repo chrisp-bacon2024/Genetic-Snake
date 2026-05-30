@@ -17,8 +17,8 @@ from models.direction import Direction
 class NetworkVisualizer:
     """Renders the Input → Hidden → Output panel from a NetworkSnapshot."""
 
-    _INPUT_LEGEND_HEADER = "Distance to"
-    _INPUT_LABELS = ("Wall", "Body", "Food")
+    _INPUT_LEGEND_HEADER = "Proximity to"
+    _INPUT_LABELS = ("Wall", "Food", "Body")
     _INPUT_LEGEND_GAP = 6
     _OUTPUT_DIRECTIONS = (
         Direction.UP,
@@ -64,10 +64,12 @@ class NetworkVisualizer:
         self._draw_input_layer(snapshot.inputs, input_center_y)
         y = input_top + self._input_layer_height + self._layer_spacing
 
-        label_bottom = self._draw_layer_label("Hidden", y)
-        hidden_top = self._nodes_top(label_bottom)
-        self._draw_hidden_layer(snapshot.hidden, hidden_top)
-        y = hidden_top + self._hidden_radius * 2 + self._layer_spacing
+        for layer_index, hidden in enumerate(snapshot.hidden_layers):
+            name = "Hidden" if len(snapshot.hidden_layers) == 1 else f"Hidden {layer_index + 1}"
+            label_bottom = self._draw_layer_label(name, y)
+            hidden_top = self._nodes_top(label_bottom)
+            self._draw_hidden_layer(hidden, hidden_top)
+            y = hidden_top + self._hidden_radius * 2 + self._layer_spacing
 
         label_bottom = self._draw_layer_label("Output", y)
         output_top = self._nodes_top(label_bottom)

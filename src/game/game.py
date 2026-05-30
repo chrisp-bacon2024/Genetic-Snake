@@ -5,10 +5,13 @@ This module has no pygame imports so the same rules can run headless during
 genetic-algorithm training.
 """
 
+import random
+
 import config
 from models.direction import Direction
 from models.food import Food
 from models.grid import Grid
+from models.position import Position
 from models.snake import Snake
 
 from .game_state import GameState, TickResult
@@ -20,10 +23,24 @@ class Game:
 
     Call tick(direction) once per simulation step. The controller (human or AI)
     supplies the direction; Game applies rules and returns what happened.
+
+    For deterministic genetic-algorithm evaluation, pass ``food_seed`` (and
+    optionally a fixed ``start_position`` / ``start_direction``) so every snake
+    faces an identical apple sequence.
     """
 
-    def __init__(self, grid: Grid) -> None:
+    def __init__(
+        self,
+        grid: Grid,
+        food_seed: int | None = None,
+        start_position: Position | None = None,
+        start_direction: Direction | None = None,
+    ) -> None:
         self._grid = grid
+        self._food_seed = food_seed
+        self._start_position = start_position
+        self._start_direction = start_direction
+        self._food_rng = random.Random(food_seed) if food_seed is not None else None
         self._state = GameState()
         self._snake: Snake
         self._food: Food
@@ -54,8 +71,27 @@ class Game:
         """True if the snake died from going too long without eating."""
         return self._state.starved
 
-    def reset(self) -> None:
-        """Start a new game on the same grid (score 0, snake at center)."""
+    def reset(
+        self,
+        food_seed: int | None = None,
+        start_position: Position | None = None,
+        start_direction: Direction | None = None,
+    ) -> None:
+        """
+        Start a new game on the same grid (score 0).
+
+        Optional arguments override the seed/start configured at construction so a
+        single Game instance can be reused across evaluation scenarios.
+        """
+        if food_seed is not None:
+            self._food_seed = food_seed
+        if start_position is not None:
+            self._start_position = start_position
+        if start_direction is not None:
+            self._start_direction = start_direction
+        self._food_rng = (
+            random.Random(self._food_seed) if self._food_seed is not None else None
+        )
         self._state = GameState()
         self._reset_entities()
 
@@ -90,7 +126,7 @@ class Game:
             self._state.score += 1
             self._state.steps_since_food = 0
             occupied = set(self._snake.body)
-            self._food.respawn(self._grid, occupied)
+            self._food.respawn(self._grid, occupied, self._food_rng)
             return TickResult(ate_food=True)
 
         self._state.steps_since_food += 1
@@ -103,8 +139,11 @@ class Game:
         return TickResult()
 
     def _reset_entities(self) -> None:
-        start = self._grid.center()
-        self._snake = Snake(start)
+        start = self._start_position if self._start_position is not None else self._grid.center()
+        if self._start_direction is not None:
+            self._snake = Snake(start, self._start_direction)
+        else:
+            self._snake = Snake(start)
         occupied = set(self._snake.body)
-        food_position = self._grid.random_empty_cell(occupied)
+        food_position = self._grid.random_empty_cell(occupied, self._food_rng)
         self._food = Food(food_position)
