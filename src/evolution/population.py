@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 import config
 from evolution.genome import Genome
+from game.game_state import DeathCause
 from neural.network import NeuralNetwork
 
 
@@ -29,6 +30,7 @@ class Individual:
     score: int = 0
     steps: int = 0
     best_food_seed: int = 0
+    death_cause: DeathCause = "wall"
 
 
 class Population:

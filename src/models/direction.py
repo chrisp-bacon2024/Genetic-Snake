@@ -52,6 +52,18 @@ class Direction(Enum):
         raise ValueError(f"No direction matches delta ({dx}, {dy}).")
 
 
+def heading_frame(facing: Direction) -> tuple[tuple[int, int], tuple[int, int]]:
+    """
+    Return (forward_vec, right_vec) unit deltas for the snake's heading.
+
+    Used to project world offsets into heading-relative forward/right components
+    for dense food-direction encoding.
+    """
+    forward = facing.to_delta()
+    right = (-forward[1], forward[0])
+    return forward, right
+
+
 def relative_ray_deltas(facing: Direction) -> list[tuple[int, int]]:
     """
     Return eight (dx, dy) unit steps relative to the snake's current heading.

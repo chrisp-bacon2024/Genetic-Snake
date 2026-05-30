@@ -34,9 +34,12 @@ WINDOW_WIDTH = PANEL_WIDTH + GRID_COLS * CELL_SIZE
 WINDOW_HEIGHT = GRID_ROWS * CELL_SIZE
 
 # Neural network topology
-# Inputs (32): 8 rays x [wall, food, body] inverse-distance (24)
+# Inputs (37): 8 rays x [wall, food, body] (24) — ray-food uses angular alignment
+#            + 1 inverse Manhattan distance to food
+#            + 4 heading-relative food offsets (fwd, right, back, left)
 #            + 4 one-hot head direction + 4 one-hot tail direction.
-NN_INPUT_SIZE = 32
+# Changing encoder semantics requires retraining; saved genomes/replays are not compatible.
+NN_INPUT_SIZE = 37
 # Hidden layers (ReLU). Tuple so the architecture can grow/shrink in one place.
 NN_HIDDEN_SIZES = (20, 12)
 NN_OUTPUT_SIZE = 4
@@ -50,13 +53,13 @@ POPULATION_SIZE = 500
 # Top individuals copied unchanged into the next generation.
 ELITE_COUNT = 5
 # Parent selection: sample TOURNAMENT_SIZE individuals, keep the fittest.
-TOURNAMENT_SIZE = 5
+TOURNAMENT_SIZE = 8
 # Fraction of offspring created via SBX crossover (rest are clone+mutate).
 CROSSOVER_RATE = 0.75
 # SBX distribution index: larger = children closer to parents, smaller = wider spread.
 SBX_ETA = 15.0
-# Per-gene mutation probability.
-MUTATION_RATE = 0.10
+# Per-gene mutation probability. Lower when eval is noisy (random 1-game boards).
+MUTATION_RATE = 0.08
 # Mixed-scale Gaussian mutation: most mutated genes get a small nudge, a fraction
 # get a large jump to escape local optima.
 MUTATION_MAGNITUDE = 0.10  # small-step std (also default for mutate())
@@ -66,12 +69,15 @@ LARGE_MUTATION_FRACTION = 0.10  # fraction of mutated genes that take a large ju
 # fitness = steps + (2^score + score^2.1 * FITNESS_SCORE_WEIGHT)
 #          - ((0.25 * steps)^1.3 * score^1.2)
 FITNESS_SCORE_WEIGHT = 500.0
-# Games per genome per generation; averaging reduces luck-of-the-board noise.
-EVAL_RUNS_PER_GENOME = 3
-# Refresh the seeded scenario set every N generations. Holding boards fixed for a
-# stretch gives a stable, comparable fitness so the GA can hill-climb; refreshing
-# occasionally prevents pure board memorization.
-SCENARIO_RESEED_FREQUENCY = 25
+# One quick game per genome for screening; top fraction gets extra runs for ranking.
+EVAL_RUNS_PER_GENOME = 1
+# Top SELECT_TOP_FRACTION of the population (by quick fitness) are re-evaluated with
+# this many random boards; selection/elites use the averaged result. Adds ~10% extra
+# sim cost but cuts lottery-winners dominating breeding.
+SELECT_TOP_FRACTION = 0.10
+SELECT_EVAL_RUNS = 5
+# Each snake gets a fresh random food seed every evaluation (no shared boards).
+RANDOM_FOOD_EVAL = True
 GENERATIONS = 200
 # Step budget per evaluation game (kills infinite loops).
 MAX_EVAL_STEPS = GRID_COLS * GRID_ROWS * 4

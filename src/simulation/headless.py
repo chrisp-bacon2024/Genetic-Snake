@@ -1,10 +1,9 @@
 """
-Headless evaluation of a genome over one or more deterministic scenarios.
+Headless evaluation of a genome for genetic-algorithm training.
 
-A Scenario pins the snake's start position/direction and the food RNG seed so every
-genome in a generation faces an identical apple sequence. Evaluation runs the network
-directly (no pygame, no per-tick snapshot) for speed; the optional record=True path
-reuses AIController + GameRecorder to capture a replay of the best run.
+When RANDOM_FOOD_EVAL is True (default), each evaluate() call runs one game with a
+fresh random food seed (centered start, default heading). Otherwise falls back to
+running over a pinned scenario list (legacy deterministic mode).
 """
 
 from __future__ import annotations
@@ -19,6 +18,7 @@ import config
 from evolution.fitness import compute_fitness
 from evolution.genome import Genome
 from game.game import Game
+from game.game_state import DeathCause
 from models.direction import Direction
 from models.grid import Grid
 from models.position import Position
@@ -47,13 +47,14 @@ class Scenario:
 
 @dataclass(frozen=True, slots=True)
 class EvalResult:
-    """Averaged outcome of evaluating a genome across its scenarios."""
+    """Outcome of evaluating a genome."""
 
     fitness: float
-    score: int  # best score across runs
-    steps: int  # steps of the best-scoring run
+    score: int
+    steps: int
     avg_score: float
-    best_food_seed: int  # food seed of the best-scoring run (for replay)
+    best_food_seed: int
+    death_cause: DeathCause
 
 
 class HeadlessSimulator:
@@ -66,12 +67,12 @@ class HeadlessSimulator:
         self._scenarios: list[Scenario] = [Scenario(food_seed=0)]
 
     def build_scenarios(self, count: int, seed: int | None = None) -> list[Scenario]:
-        """Generate `count` centered scenarios with distinct food seeds."""
+        """Generate centered scenarios with distinct food seeds (deterministic mode)."""
         rng = random.Random(seed)
         return [Scenario(food_seed=rng.randrange(2**31)) for _ in range(max(1, count))]
 
     def set_scenarios(self, scenarios: list[Scenario]) -> None:
-        """Pin the scenario set used by evaluate() (all genomes share it)."""
+        """Pin the scenario set used by evaluate() in deterministic mode."""
         if not scenarios:
             raise ValueError("At least one scenario is required.")
         self._scenarios = list(scenarios)
@@ -81,24 +82,69 @@ class HeadlessSimulator:
         return list(self._scenarios)
 
     def evaluate(
+        self, genome: Genome, *, runs: int | None = None, record: bool = False
+    ) -> "EvalResult | tuple[EvalResult, GameRecorder]":
+        """Run the genome and return fitness plus metrics for replay."""
+        run_count = runs if runs is not None else config.EVAL_RUNS_PER_GENOME
+        if config.RANDOM_FOOD_EVAL:
+            return self._evaluate_random(genome, runs=run_count, record=record)
+        return self._evaluate_scenarios(genome, record=record)
+
+    def _evaluate_random(
+        self, genome: Genome, *, runs: int = 1, record: bool = False
+    ) -> "EvalResult | tuple[EvalResult, GameRecorder]":
+        """Run one or more games with fresh random food seeds each."""
+        network = NeuralNetwork.from_genome(genome)
+        run_count = max(1, runs)
+
+        fitnesses: list[float] = []
+        scores: list[int] = []
+        best_index = 0
+        best_key = (-1, 0)
+        scenarios: list[Scenario] = []
+        death_causes: list[DeathCause] = []
+
+        for _ in range(run_count):
+            food_seed = random.randrange(2**31)
+            scenario = Scenario(food_seed=food_seed)
+            score, steps, cause = self._run(network, scenario)
+            fitnesses.append(compute_fitness(score, steps))
+            scores.append(score)
+            scenarios.append(scenario)
+            death_causes.append(cause)
+            if (score, steps) > best_key:
+                best_key = (score, steps)
+                best_index = len(scenarios) - 1
+
+        result = EvalResult(
+            fitness=float(np.mean(fitnesses)),
+            score=max(scores),
+            steps=best_key[1],
+            avg_score=float(np.mean(scores)),
+            best_food_seed=scenarios[best_index].food_seed,
+            death_cause=death_causes[best_index],
+        )
+        if not record:
+            return result
+        recorder = self._record_run(genome, scenarios[best_index])
+        return result, recorder
+
+    def _evaluate_scenarios(
         self, genome: Genome, *, record: bool = False
     ) -> "EvalResult | tuple[EvalResult, GameRecorder]":
-        """
-        Run the genome over every active scenario.
-
-        Returns averaged fitness plus the best score/steps. With record=True, also
-        returns a GameRecorder holding the best-scoring run for replay.
-        """
+        """Run over pinned scenarios; fitness is the mean across runs."""
         network = NeuralNetwork.from_genome(genome)
 
         fitnesses: list[float] = []
         scores: list[int] = []
         best_index = 0
-        best_key = (-1, 0)  # (score, steps) — prefer higher score, then more steps
+        best_key = (-1, 0)
+        death_causes: list[DeathCause] = []
         for i, scenario in enumerate(self._scenarios):
-            score, steps = self._run(network, scenario)
+            score, steps, cause = self._run(network, scenario)
             fitnesses.append(compute_fitness(score, steps))
             scores.append(score)
+            death_causes.append(cause)
             if (score, steps) > best_key:
                 best_key = (score, steps)
                 best_index = i
@@ -109,6 +155,7 @@ class HeadlessSimulator:
             steps=best_key[1],
             avg_score=float(np.mean(scores)),
             best_food_seed=self._scenarios[best_index].food_seed,
+            death_cause=death_causes[best_index],
         )
 
         if not record:
@@ -117,8 +164,8 @@ class HeadlessSimulator:
         recorder = self._record_run(genome, self._scenarios[best_index])
         return result, recorder
 
-    def _run(self, network: NeuralNetwork, scenario: Scenario) -> tuple[int, int]:
-        """Simulate one game; return (score, steps)."""
+    def _run(self, network: NeuralNetwork, scenario: Scenario) -> tuple[int, int, DeathCause]:
+        """Simulate one game; return (score, steps, death_cause)."""
         game = Game(
             self._grid,
             food_seed=scenario.food_seed,
@@ -133,7 +180,9 @@ class HeadlessSimulator:
             current = self._pick_direction(outputs, current)
             game.tick(current)
             steps += 1
-        return game.score, steps
+        if game.alive:
+            return game.score, steps, "timeout"
+        return game.score, steps, game.death_cause or "wall"
 
     def _record_run(self, genome: Genome, scenario: Scenario) -> "GameRecorder":
         """Re-run a scenario with AIController so the full replay is captured."""

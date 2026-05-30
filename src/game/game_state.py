@@ -1,6 +1,9 @@
 """Outcome flags and score/alive tracking for a single game session."""
 
 from dataclasses import dataclass
+from typing import Literal
+
+DeathCause = Literal["wall", "body", "starved", "timeout"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -10,6 +13,7 @@ class TickResult:
     ate_food: bool = False
     died: bool = False
     starved: bool = False
+    death_cause: DeathCause | None = None
 
 
 @dataclass
@@ -20,3 +24,4 @@ class GameState:
     alive: bool = True
     steps_since_food: int = 0
     starved: bool = False
+    death_cause: DeathCause | None = None

@@ -6,7 +6,7 @@ seed of its best run). The viewer re-simulates each one live, reusing the same g
 renderer and neural-network panel as the interactive app, and cycles through them in
 generation order. The current generation and score are shown in the window caption.
 
-Controls: Right/Space = next, Left = previous, Esc = quit.
+Controls: N / Right / Space = next, Left = previous, Esc = quit.
 """
 
 from pathlib import Path
@@ -75,7 +75,7 @@ class ReplayViewer:
                     elif event.type == pygame.KEYDOWN:
                         if event.key == pygame.K_ESCAPE:
                             running = False
-                        elif event.key in (pygame.K_RIGHT, pygame.K_SPACE):
+                        elif event.key in (pygame.K_n, pygame.K_RIGHT, pygame.K_SPACE):
                             advance = 1
                         elif event.key == pygame.K_LEFT:
                             advance = -1

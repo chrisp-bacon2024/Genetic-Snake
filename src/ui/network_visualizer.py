@@ -64,6 +64,28 @@ class NetworkVisualizer:
         self._draw_input_layer(snapshot.inputs, input_center_y)
         y = input_top + self._input_layer_height + self._layer_spacing
 
+        label_bottom = self._draw_layer_label("Food (dist + dir)", y)
+        food_top = self._nodes_top(label_bottom)
+        self._draw_feature_row(
+            snapshot.inputs,
+            start_index=24,
+            count=5,
+            nodes_top=food_top,
+            base_color=config.COLOR_NEURON_INPUT_FOOD,
+        )
+        y = food_top + self._input_radius * 2 + self._layer_spacing
+
+        label_bottom = self._draw_layer_label("Direction", y)
+        direction_top = self._nodes_top(label_bottom)
+        self._draw_feature_row(
+            snapshot.inputs,
+            start_index=29,
+            count=8,
+            nodes_top=direction_top,
+            base_color=config.COLOR_CONTROL_ACTIVE,
+        )
+        y = direction_top + self._input_radius * 2 + self._layer_spacing
+
         for layer_index, hidden in enumerate(snapshot.hidden_layers):
             name = "Hidden" if len(snapshot.hidden_layers) == 1 else f"Hidden {layer_index + 1}"
             label_bottom = self._draw_layer_label(name, y)
@@ -211,6 +233,27 @@ class NetworkVisualizer:
             text_rect = text.get_rect(right=label_right, centery=first_row_center_y + i * self._input_row_height)
             self._surface.blit(text, text_rect)
 
+    def _draw_feature_row(
+        self,
+        inputs: np.ndarray,
+        start_index: int,
+        count: int,
+        nodes_top: int,
+        base_color: tuple[int, int, int],
+    ) -> None:
+        radius = self._input_radius
+        gap = self._input_col_gap
+        center_y = nodes_top + radius
+        total_width = count * (radius * 2 + gap) - gap
+        start_x = (config.PANEL_WIDTH - total_width) // 2 + radius
+
+        for i in range(count):
+            index = start_index + i
+            value = float(inputs[index]) if index < len(inputs) else 0.0
+            color = self._lerp_color(config.COLOR_NEURON_INACTIVE, base_color, value)
+            x = start_x + i * (radius * 2 + gap)
+            pygame.draw.circle(self._surface, color, (x, center_y), radius)
+
     def _draw_hidden_layer(self, hidden: np.ndarray, nodes_top: int) -> None:
         count = len(hidden)
         radius = self._hidden_radius
@@ -227,8 +270,8 @@ class NetworkVisualizer:
     def _input_color(self, feature_row: int, value: float) -> tuple[int, int, int]:
         base_colors = (
             config.COLOR_NEURON_INPUT_WALL,
-            config.COLOR_NEURON_INPUT_BODY,
             config.COLOR_NEURON_INPUT_FOOD,
+            config.COLOR_NEURON_INPUT_BODY,
         )
         return self._lerp_color(config.COLOR_NEURON_INACTIVE, base_colors[feature_row], value)
 

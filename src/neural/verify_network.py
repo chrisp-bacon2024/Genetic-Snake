@@ -108,22 +108,69 @@ def test_forward_hand_computed() -> None:
 
 
 def test_encoder_shape_and_range() -> None:
-    section("TEST 5: Encoder produces 32 features in [0, 1]")
+    section("TEST 5: Encoder produces 37 features in [0, 1]")
     game = Game(Grid(config.GRID_COLS, config.GRID_ROWS), food_seed=123)
     features = GameStateEncoder().encode(game)
     print(f"  feature count: {features.shape[0]} (expected {config.NN_INPUT_SIZE})")
     print(f"  min={features.min():.3f}  max={features.max():.3f}")
+    food_block = features[24:29]
     one_hot_tail = features[-8:]
+    print(f"  food block (dist + dir): {food_block.tolist()}")
     print(f"  head+tail one-hot block sums: {one_hot_tail[:4].sum():.0f}, {one_hot_tail[4:].sum():.0f}")
-    assert features.shape[0] == config.NN_INPUT_SIZE == 32
+    assert features.shape[0] == config.NN_INPUT_SIZE == 37
     assert features.min() >= 0.0 and features.max() <= 1.0
-    assert np.isclose(one_hot_tail[:4].sum(), 1.0)  # exactly one head direction
-    assert np.isclose(one_hot_tail[4:].sum(), 1.0)  # exactly one tail direction
+    assert food_block[0] > 0.0  # inverse manhattan distance
+    assert food_block[1:].sum() > 0.0  # direction offsets
+    assert np.isclose(one_hot_tail[:4].sum(), 1.0)
+    assert np.isclose(one_hot_tail[4:].sum(), 1.0)
     print("  PASS: encoder shape and value range are correct")
 
 
+def test_encoder_dense_food_off_ray() -> None:
+    section("TEST 6: Food distance + direction when food is off all rays")
+    from models.direction import Direction, relative_ray_deltas
+    from models.position import Position
+
+    encoder = GameStateEncoder()
+    head = Position(10, 10)
+    food = Position(12, 13)
+    food_feats = encoder._food_features(Direction.RIGHT, head, food)
+    print(f"  head={head} food={food} facing=RIGHT  features={food_feats}")
+    assert food_feats[0] == 1.0 / (2 + 3 + 1)  # inverse manhattan = 1/6
+    assert food_feats[1] > 0.0  # forward (2 cells)
+    assert food_feats[2] > 0.0  # right (3 cells)
+    assert food_feats[3] == 0.0  # no food behind
+    assert food_feats[4] == 0.0  # no food to left
+    print("  PASS: off-ray food has clear distance and direction signals")
+
+
+def test_encoder_angular_ray_food() -> None:
+    section("TEST 7: Angular ray-food active on all rays when food is off-ray")
+    from models.direction import Direction, relative_ray_deltas
+    from models.position import Position
+
+    encoder = GameStateEncoder()
+    head = Position(10, 10)
+    food = Position(12, 13)
+    ray_food = [
+        encoder._ray_food_alignment(head, food, dx, dy)
+        for dx, dy in relative_ray_deltas(Direction.RIGHT)
+    ]
+    print(f"  off-ray food ray signals: {[round(v, 3) for v in ray_food]}")
+    assert len(ray_food) == 8
+    assert all(value > 0.0 for value in ray_food)
+    assert max(ray_food) > min(ray_food)  # strongest on aligned rays
+
+    game = Game(Grid(config.GRID_COLS, config.GRID_ROWS), food_seed=456)
+    features = encoder.encode(game)
+    ray_food_block = features[1::3][:8]
+    print(f"  full encode ray-food: min={ray_food_block.min():.3f} max={ray_food_block.max():.3f}")
+    assert np.all(ray_food_block > 0.0)
+    print("  PASS: all 8 ray-food inputs are non-zero")
+
+
 def test_genetic_operators() -> None:
-    section("TEST 6: SBX crossover, mutation, and clip")
+    section("TEST 8: SBX crossover, mutation, and clip")
     np.random.seed(1)
     length = NeuralNetwork.genome_length()
     p1 = Genome(np.full(length, -0.5))
@@ -156,6 +203,8 @@ def main() -> None:
     test_genome_round_trip()
     test_forward_hand_computed()
     test_encoder_shape_and_range()
+    test_encoder_dense_food_off_ray()
+    test_encoder_angular_ray_food()
     test_genetic_operators()
     print()
     print("All tests passed.")

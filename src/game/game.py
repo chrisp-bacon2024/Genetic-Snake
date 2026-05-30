@@ -14,7 +14,7 @@ from models.grid import Grid
 from models.position import Position
 from models.snake import Snake
 
-from .game_state import GameState, TickResult
+from .game_state import DeathCause, GameState, TickResult
 
 
 class Game:
@@ -71,6 +71,11 @@ class Game:
         """True if the snake died from going too long without eating."""
         return self._state.starved
 
+    @property
+    def death_cause(self) -> DeathCause | None:
+        """How the snake died: wall, body, starved, or None if still alive."""
+        return self._state.death_cause
+
     def reset(
         self,
         food_seed: int | None = None,
@@ -115,11 +120,13 @@ class Game:
 
         if not self._grid.in_bounds(new_head):
             self._state.alive = False
-            return TickResult(died=True)
+            self._state.death_cause = "wall"
+            return TickResult(died=True, death_cause="wall")
 
         if self._snake.collides_with_self(new_head):
             self._state.alive = False
-            return TickResult(died=True)
+            self._state.death_cause = "body"
+            return TickResult(died=True, death_cause="body")
 
         if new_head == self._food.position:
             self._snake.grow()
@@ -134,7 +141,8 @@ class Game:
         if self._state.steps_since_food >= limit:
             self._state.alive = False
             self._state.starved = True
-            return TickResult(died=True, starved=True)
+            self._state.death_cause = "starved"
+            return TickResult(died=True, starved=True, death_cause="starved")
 
         return TickResult()
 
