@@ -86,8 +86,24 @@ class NetworkVisualizer:
         )
         y = direction_top + self._input_radius * 2 + self._layer_spacing
 
+        label_bottom = self._draw_layer_label("Lookahead", y)
+        lookahead_top = self._nodes_top(label_bottom)
+        self._draw_feature_row(
+            snapshot.inputs,
+            start_index=37,
+            count=4,
+            nodes_top=lookahead_top,
+            base_color=config.COLOR_NEURON_INPUT_FOOD,
+        )
+        y = lookahead_top + self._input_radius * 2 + self._layer_spacing
+
         for layer_index, hidden in enumerate(snapshot.hidden_layers):
-            name = "Hidden" if len(snapshot.hidden_layers) == 1 else f"Hidden {layer_index + 1}"
+            if config.NN_ARCH == "gru" and len(snapshot.hidden_layers) == 1:
+                name = f"Memory ({hidden.shape[0]})"
+            elif len(snapshot.hidden_layers) == 1:
+                name = "Hidden"
+            else:
+                name = f"Hidden {layer_index + 1}"
             label_bottom = self._draw_layer_label(name, y)
             hidden_top = self._nodes_top(label_bottom)
             self._draw_hidden_layer(hidden, hidden_top)

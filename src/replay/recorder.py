@@ -78,6 +78,7 @@ class GameRecorder:
             direction=snapshot.chosen_direction,
             inputs=snapshot.inputs.copy(),
             hidden_layers=tuple(layer.copy() for layer in snapshot.hidden_layers),
+            rnn_hidden=snapshot.rnn_hidden.copy(),
             outputs=snapshot.outputs.copy(),
             snake=self._serialize_snake(game.snake.body),
             food=(game.food.position.x, game.food.position.y),

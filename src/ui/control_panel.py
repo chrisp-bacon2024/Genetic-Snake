@@ -16,19 +16,25 @@ class ControlPanel:
         self._font = pygame.font.SysFont("consolas", 18)
         self._network_visualizer = NetworkVisualizer(surface)
 
-    def draw(self, snapshot: NetworkSnapshot) -> None:
+    def draw(self, snapshot: NetworkSnapshot, *, footer_reserve: int = 0) -> None:
         """Fill the panel and render the network diagram plus footer hints."""
         self._surface.fill(config.COLOR_PANEL)
         self._network_visualizer.draw(snapshot)
-        self._draw_hints(self._network_visualizer.bottom_y)
+        self._draw_hints(self._network_visualizer.bottom_y, footer_reserve=footer_reserve)
 
-    def _draw_hints(self, start_y: int) -> None:
+    def _draw_hints(self, start_y: int, *, footer_reserve: int = 0) -> None:
         hint_lines = [
             "AI-controlled",
             "R to restart",
             "Esc to quit",
         ]
-        y = max(start_y, config.WINDOW_HEIGHT - 24 - len(hint_lines) * config.HINT_LINE_HEIGHT)
+        y = max(
+            start_y,
+            config.WINDOW_HEIGHT
+            - 24
+            - len(hint_lines) * config.HINT_LINE_HEIGHT
+            - footer_reserve,
+        )
         for line in hint_lines:
             text = self._font.render(line, True, config.COLOR_TEXT_DIM)
             text_rect = text.get_rect(centerx=config.PANEL_WIDTH // 2, top=y)

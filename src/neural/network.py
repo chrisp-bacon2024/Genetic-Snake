@@ -1,10 +1,12 @@
 """
-Feedforward neural network mapped to/from a Genome.
+Neural network mapped to/from a Genome.
 
-Topology is configurable via config.NN_INPUT_SIZE, config.NN_HIDDEN_SIZES (a tuple
-of hidden-layer widths), and config.NN_OUTPUT_SIZE. Every hidden layer is ReLU; the
-output layer is linear (raw direction logits). Default: 32 -> 20 -> 12 -> 4.
+Default architecture (NN_ARCH=\"gru\"): 41 inputs -> GRU(32) -> 4 linear outputs.
+Recurrent hidden state must be reset at the start of each game and carried across
+ticks within a game.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 
@@ -14,6 +16,10 @@ import config
 from evolution.genome import Genome
 
 
+def _sigmoid(x: np.ndarray) -> np.ndarray:
+    return 1.0 / (1.0 + np.exp(-np.clip(x, -60.0, 60.0)))
+
+
 @dataclass(frozen=True, slots=True)
 class ForwardResult:
     """Activations produced by one forward pass (used for UI and replay recording)."""
@@ -21,97 +27,153 @@ class ForwardResult:
     inputs: np.ndarray
     hidden_layers: tuple[np.ndarray, ...]
     outputs: np.ndarray
+    rnn_hidden: np.ndarray
+
+
+@dataclass(frozen=True, slots=True)
+class _GRUWeights:
+    """Gate weights for one GRU cell plus the output projection."""
+
+    Wz: np.ndarray
+    Uz: np.ndarray
+    bz: np.ndarray
+    Wr: np.ndarray
+    Ur: np.ndarray
+    br: np.ndarray
+    Wh: np.ndarray
+    Uh: np.ndarray
+    bh: np.ndarray
+    Wo: np.ndarray
+    bo: np.ndarray
 
 
 class NeuralNetwork:
     """
-    Multi-layer perceptron whose weights are stored in a flat Genome.
+    GRU policy network whose weights are stored in a flat Genome.
 
-    Layers are stored as a list of (W, b) pairs where W has shape (fan_in, fan_out).
-    The genome packs them in order: W0, b0, W1, b1, ... flattened row-major.
+  Genome layout: Wz, Uz, bz, Wr, Ur, br, Wh, Uh, bh, Wo, bo (row-major flatten).
     """
 
-    def __init__(self, layers: list[tuple[np.ndarray, np.ndarray]]) -> None:
-        self._layers = layers
+    def __init__(self, gru: _GRUWeights) -> None:
+        self._gru = gru
 
     @classmethod
     def architecture(cls) -> tuple[int, ...]:
-        """Full layer-size sequence: (input, *hidden, output)."""
-        return (config.NN_INPUT_SIZE, *config.NN_HIDDEN_SIZES, config.NN_OUTPUT_SIZE)
+        """(input_size, rnn_hidden, output_size) for checkpoint compatibility."""
+        return (config.NN_INPUT_SIZE, config.NN_RNN_HIDDEN, config.NN_OUTPUT_SIZE)
+
+    @classmethod
+    def rnn_hidden_size(cls) -> int:
+        return config.NN_RNN_HIDDEN
+
+    @classmethod
+    def new_hidden_state(cls) -> np.ndarray:
+        """Zero recurrent state for a new game."""
+        return np.zeros(cls.rnn_hidden_size(), dtype=np.float64)
 
     @classmethod
     def genome_length(cls) -> int:
-        """Number of floats required in a Genome for this architecture."""
-        sizes = cls.architecture()
-        total = 0
-        for fan_in, fan_out in zip(sizes, sizes[1:]):
-            total += fan_in * fan_out + fan_out
-        return total
+        input_size = config.NN_INPUT_SIZE
+        hidden = config.NN_RNN_HIDDEN
+        output_size = config.NN_OUTPUT_SIZE
+        gate = input_size * hidden + hidden * hidden + hidden
+        return 3 * gate + hidden * output_size + output_size
 
     @classmethod
     def from_genome(cls, genome: Genome) -> "NeuralNetwork":
-        """Unpack a flat gene array into per-layer weight matrices and bias vectors."""
         expected = cls.genome_length()
         if genome.genes.size != expected:
             raise ValueError(f"Expected genome length {expected}, got {genome.genes.size}.")
 
-        sizes = cls.architecture()
+        input_size = config.NN_INPUT_SIZE
+        hidden = config.NN_RNN_HIDDEN
+        output_size = config.NN_OUTPUT_SIZE
         genes = genome.genes
         idx = 0
-        layers: list[tuple[np.ndarray, np.ndarray]] = []
-        for fan_in, fan_out in zip(sizes, sizes[1:]):
-            w_size = fan_in * fan_out
-            w = genes[idx : idx + w_size].reshape(fan_in, fan_out)
-            idx += w_size
-            b = genes[idx : idx + fan_out]
-            idx += fan_out
-            layers.append((w, b))
-        return cls(layers)
+
+        def read_gate() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+            nonlocal idx
+            w = genes[idx : idx + input_size * hidden].reshape(input_size, hidden)
+            idx += input_size * hidden
+            u = genes[idx : idx + hidden * hidden].reshape(hidden, hidden)
+            idx += hidden * hidden
+            b = genes[idx : idx + hidden]
+            idx += hidden
+            return w, u, b
+
+        Wz, Uz, bz = read_gate()
+        Wr, Ur, br = read_gate()
+        Wh, Uh, bh = read_gate()
+        Wo = genes[idx : idx + hidden * output_size].reshape(hidden, output_size)
+        idx += hidden * output_size
+        bo = genes[idx : idx + output_size]
+        idx += output_size
+
+        return cls(
+            _GRUWeights(Wz=Wz, Uz=Uz, bz=bz, Wr=Wr, Ur=Ur, br=br, Wh=Wh, Uh=Uh, bh=bh, Wo=Wo, bo=bo)
+        )
 
     def to_genome(self) -> Genome:
-        """Serialize current weights back into a Genome (same order as from_genome)."""
-        chunks: list[np.ndarray] = []
-        for w, b in self._layers:
-            chunks.append(w.reshape(-1))
-            chunks.append(b)
+        g = self._gru
+        chunks = [
+            g.Wz.reshape(-1),
+            g.Uz.reshape(-1),
+            g.bz,
+            g.Wr.reshape(-1),
+            g.Ur.reshape(-1),
+            g.br,
+            g.Wh.reshape(-1),
+            g.Uh.reshape(-1),
+            g.bh,
+            g.Wo.reshape(-1),
+            g.bo,
+        ]
         return Genome(np.concatenate(chunks))
 
     @classmethod
     def random_genome(cls) -> Genome:
-        """
-        He-normal initialized genome (good defaults for ReLU layers).
-
-        Each weight ~ N(0, sqrt(2/fan_in)); biases start at zero. This keeps initial
-        activations well-scaled instead of the flat uniform range, which gives the GA
-        a much healthier starting population.
-        """
-        sizes = cls.architecture()
+        """He-style init; smaller std on recurrent U matrices."""
+        input_size = config.NN_INPUT_SIZE
+        hidden = config.NN_RNN_HIDDEN
+        output_size = config.NN_OUTPUT_SIZE
         chunks: list[np.ndarray] = []
-        for fan_in, fan_out in zip(sizes, sizes[1:]):
-            std = np.sqrt(2.0 / fan_in)
-            chunks.append(np.random.normal(0.0, std, size=fan_in * fan_out))
-            chunks.append(np.zeros(fan_out))
+
+        for _ in range(3):
+            std_in = np.sqrt(2.0 / input_size)
+            std_rec = np.sqrt(2.0 / (input_size + hidden)) * 0.5
+            chunks.append(np.random.normal(0.0, std_in, size=input_size * hidden))
+            chunks.append(np.random.normal(0.0, std_rec, size=hidden * hidden))
+            chunks.append(np.zeros(hidden))
+
+        std_out = np.sqrt(2.0 / hidden)
+        chunks.append(np.random.normal(0.0, std_out, size=hidden * output_size))
+        chunks.append(np.zeros(output_size))
         return Genome(np.concatenate(chunks))
 
-    def forward(self, inputs: np.ndarray) -> ForwardResult:
+    def forward(
+        self, inputs: np.ndarray, hidden: np.ndarray
+    ) -> tuple[ForwardResult, np.ndarray]:
         """
-        Run one forward pass.
+        One GRU step: update hidden state and produce direction logits.
 
-        Each hidden layer: ReLU(x @ W + b). Output layer is linear (raw logits).
+        Returns (ForwardResult, h_new). ``hidden`` must match ``rnn_hidden_size()``.
         """
         x = np.asarray(inputs, dtype=np.float64)
-        activation = x
-        hidden_layers: list[np.ndarray] = []
-        last = len(self._layers) - 1
-        for i, (w, b) in enumerate(self._layers):
-            z = activation @ w + b
-            if i < last:
-                activation = np.maximum(z, 0.0)
-                hidden_layers.append(activation)
-            else:
-                activation = z
-        return ForwardResult(
-            inputs=x,
-            hidden_layers=tuple(hidden_layers),
-            outputs=activation,
+        h = np.asarray(hidden, dtype=np.float64)
+        g = self._gru
+
+        z = _sigmoid(x @ g.Wz + h @ g.Uz + g.bz)
+        r = _sigmoid(x @ g.Wr + h @ g.Ur + g.br)
+        h_tilde = np.tanh(x @ g.Wh + (r * h) @ g.Uh + g.bh)
+        h_new = (1.0 - z) * h + z * h_tilde
+        outputs = h_new @ g.Wo + g.bo
+
+        return (
+            ForwardResult(
+                inputs=x,
+                hidden_layers=(h_new.copy(),),
+                outputs=outputs,
+                rnn_hidden=h_new.copy(),
+            ),
+            h_new,
         )

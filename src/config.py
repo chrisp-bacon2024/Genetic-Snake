@@ -34,14 +34,18 @@ WINDOW_WIDTH = PANEL_WIDTH + GRID_COLS * CELL_SIZE
 WINDOW_HEIGHT = GRID_ROWS * CELL_SIZE
 
 # Neural network topology
-# Inputs (37): 8 rays x [wall, food, body] (24) — ray-food uses angular alignment
+# Inputs (41): 8 rays x [wall, food, body] (24) — ray-food uses angular alignment
 #            + 1 inverse Manhattan distance to food
 #            + 4 heading-relative food offsets (fwd, right, back, left)
-#            + 4 one-hot head direction + 4 one-hot tail direction.
-# Changing encoder semantics requires retraining; saved genomes/replays are not compatible.
-NN_INPUT_SIZE = 37
-# Hidden layers (ReLU). Tuple so the architecture can grow/shrink in one place.
-NN_HIDDEN_SIZES = (20, 12)
+#            + 4 one-hot head direction + 4 one-hot tail direction
+#            + 4 one-step lookahead (safe UP/DOWN/LEFT/RIGHT, matches output order).
+# Changing encoder or NN_ARCH requires retraining; saved genomes/replays are not compatible.
+NN_INPUT_SIZE = 41
+# Network architecture: GRU memory over encoder inputs (41 -> GRU -> 4).
+NN_ARCH = "gru"
+NN_RNN_HIDDEN = 32
+# Legacy MLP hidden sizes (unused when NN_ARCH == "gru"; kept for panel layout constants).
+NN_HIDDEN_SIZES = (48, 24)
 NN_OUTPUT_SIZE = 4
 NN_WEIGHT_INIT_RANGE = (-1.0, 1.0)
 # Genes are clamped to this range after crossover/mutation so weights cannot explode.
@@ -49,17 +53,20 @@ NN_WEIGHT_CLIP_RANGE = (-1.0, 1.0)
 RESTART_NEW_GENOME = False
 
 # --- Genetic algorithm training -------------------------------------------
-POPULATION_SIZE = 500
+POPULATION_SIZE = 1000
 # Top individuals copied unchanged into the next generation.
 ELITE_COUNT = 5
 # Parent selection: sample TOURNAMENT_SIZE individuals, keep the fittest.
 TOURNAMENT_SIZE = 8
-# Fraction of offspring created via SBX crossover (rest are clone+mutate).
-CROSSOVER_RATE = 0.75
+# Fraction of offspring created via SBX crossover (rest are clone+mutate asexual).
+# Default 1.0 = always crossover; use --asexual CLI to disable.
+CROSSOVER_RATE = 1.0
 # SBX distribution index: larger = children closer to parents, smaller = wider spread.
 SBX_ETA = 15.0
+# Crossover parents are chosen by tournament from this top fraction of the population.
+PARENT_POOL_FRACTION = 0.25
 # Per-gene mutation probability. Lower when eval is noisy (random 1-game boards).
-MUTATION_RATE = 0.08
+MUTATION_RATE = 0.05
 # Mixed-scale Gaussian mutation: most mutated genes get a small nudge, a fraction
 # get a large jump to escape local optima.
 MUTATION_MAGNITUDE = 0.10  # small-step std (also default for mutate())
@@ -69,18 +76,32 @@ LARGE_MUTATION_FRACTION = 0.10  # fraction of mutated genes that take a large ju
 # fitness = steps + (2^score + score^2.1 * FITNESS_SCORE_WEIGHT)
 #          - ((0.25 * steps)^1.3 * score^1.2)
 FITNESS_SCORE_WEIGHT = 500.0
-# One quick game per genome for screening; top fraction gets extra runs for ranking.
-EVAL_RUNS_PER_GENOME = 1
-# Top SELECT_TOP_FRACTION of the population (by quick fitness) are re-evaluated with
-# this many random boards; selection/elites use the averaged result. Adds ~10% extra
-# sim cost but cuts lottery-winners dominating breeding.
-SELECT_TOP_FRACTION = 0.10
+# Bonus per cell of Manhattan distance closed toward food each step (early learning signal).
+FITNESS_DISTANCE_SHAPING = 0.5
+# Cap so shaping alone cannot outweigh eating one apple (~500+ score term).
+FITNESS_SHAPING_CAP = 50.0
+# Screening games averaged per genome; top fraction gets SELECT_EVAL_RUNS re-runs.
+EVAL_RUNS_PER_GENOME = 2
+# Top SELECT_TOP_FRACTION of the population (by screening fitness) are re-evaluated with
+# this many boards; selection/elites use the averaged result.
+SELECT_TOP_FRACTION = 0.25
 SELECT_EVAL_RUNS = 5
-# Each snake gets a fresh random food seed every evaluation (no shared boards).
+# When True, every snake in a generation plays the same food seeds (fair comparison).
+SHARED_EVAL_SEEDS = True
+# Each snake gets a fresh random food seed every evaluation when SHARED_EVAL_SEEDS is False.
 RANDOM_FOOD_EVAL = True
 GENERATIONS = 200
-# Step budget per evaluation game (kills infinite loops).
-MAX_EVAL_STEPS = GRID_COLS * GRID_ROWS * 4
+# Step budget per headless eval game. None = run until wall/body/starvation.
+# Set to an int (e.g. cols * rows * 4) to cap long games during training.
+MAX_EVAL_STEPS = None
+
+# Curriculum: train on smaller grids before the full board (cols, rows, generations).
+CURRICULUM_ENABLED = False
+CURRICULUM_STAGES = (
+    (5, 5, 40),
+    (10, 10, 60),
+    (20, 20, 100),
+)
 
 # Output index -> Direction mapping order
 OUTPUT_DIRECTIONS = ("UP", "DOWN", "LEFT", "RIGHT")

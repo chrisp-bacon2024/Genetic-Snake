@@ -1,7 +1,7 @@
 """
-Convert a live Game into 37 vision features for the neural network.
+Convert a live Game into 41 vision features for the neural network.
 
-Layout (37 features):
+Layout (41 features):
   - 8 rays cast relative to the snake heading, each contributing [wall, food, body]:
     wall/body use inverse distance along the ray; food uses angular alignment toward
     food (always-on baseline + boost on rays pointing at food).
@@ -9,11 +9,12 @@ Layout (37 features):
   - 4 heading-relative food offsets [fwd, right, back, left] normalized by grid size.
   - 4 one-hot head-direction features (UP, DOWN, LEFT, RIGHT).
   - 4 one-hot tail-direction features (UP, DOWN, LEFT, RIGHT).
+  - 4 one-step lookahead flags (UP, DOWN, LEFT, RIGHT): 1.0 if that move is legal
+    and collision-free, else 0.0 (matches network output order).
 """
 
 import numpy as np
 
-import config
 from game.game import Game
 from models.direction import Direction, heading_frame, relative_ray_deltas
 from models.position import Position
@@ -23,10 +24,7 @@ _DIRECTION_ORDER = (Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGH
 
 
 class GameStateEncoder:
-    """Encodes game state as a 37-element float vector in [0, 1]."""
-
-    def __init__(self, max_steps: int | None = None) -> None:
-        self._max_manhattan = max_steps or (config.GRID_COLS - 1 + config.GRID_ROWS - 1)
+    """Encodes game state as a 41-element float vector in [0, 1]."""
 
     def encode(self, game: Game) -> np.ndarray:
         """Build the input vector from the current board state."""
@@ -34,6 +32,7 @@ class GameStateEncoder:
         body = set(game.snake.body[1:])
         food_pos = game.food.position
         grid = game.grid
+        norm = self._grid_max_manhattan(grid)
         features: list[float] = []
 
         for dx, dy in relative_ray_deltas(game.snake.direction):
@@ -42,17 +41,33 @@ class GameStateEncoder:
             features.append(self._ray_food_alignment(head, food_pos, dx, dy))
             features.append(self._inverse(body_steps))
 
-        features.extend(self._food_features(game.snake.direction, head, food_pos))
+        features.extend(self._food_features(game.snake.direction, head, food_pos, norm))
         features.extend(self._one_hot(game.snake.direction))
         features.extend(self._one_hot(game.snake.tail_direction))
+        features.extend(self._lookahead(game))
 
         return np.asarray(features, dtype=np.float64)
+
+    def _lookahead(self, game: Game) -> list[float]:
+        """Per output direction: 1.0 if one step is in-bounds and body-safe, else 0.0."""
+        snake = game.snake
+        grid = game.grid
+        return [
+            1.0 if snake.is_step_safe(direction, grid) else 0.0
+            for direction in _DIRECTION_ORDER
+        ]
+
+    @staticmethod
+    def _grid_max_manhattan(grid) -> float:
+        """Largest Manhattan distance on this board (for normalizing food offsets)."""
+        return float(max(1, grid.width - 1 + grid.height - 1))
 
     def _food_features(
         self,
         facing: Direction,
         head: Position,
         food_pos: Position,
+        norm: float,
     ) -> list[float]:
         """
         Always-on food location: [inverse_manhattan, fwd, right, back, left].
@@ -68,7 +83,6 @@ class GameStateEncoder:
         forward = dx * fx + dy * fy
         right = dx * rx + dy * ry
 
-        norm = float(self._max_manhattan)
         return [
             self._inverse_manhattan(manhattan),
             max(0.0, forward) / norm,

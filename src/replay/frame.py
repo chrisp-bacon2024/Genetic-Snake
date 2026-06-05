@@ -25,6 +25,7 @@ class ReplayFrame:
     direction: Direction
     inputs: np.ndarray
     hidden_layers: tuple[np.ndarray, ...]
+    rnn_hidden: np.ndarray | None = None
     outputs: np.ndarray
     snake: tuple[tuple[int, int], ...]
     food: tuple[int, int]
@@ -41,6 +42,7 @@ class ReplayFrame:
             "direction": self.direction.name,
             "inputs": self.inputs.tolist(),
             "hidden_layers": [layer.tolist() for layer in self.hidden_layers],
+            "rnn_hidden": self.rnn_hidden.tolist() if self.rnn_hidden is not None else [],
             "outputs": self.outputs.tolist(),
             "snake": [list(segment) for segment in self.snake],
             "food": list(self.food),
@@ -60,11 +62,16 @@ class ReplayFrame:
             )
         else:
             hidden_layers = (np.asarray(data.get("hidden", []), dtype=np.float64),)
+        rnn_hidden = None
+        if "rnn_hidden" in data and len(data["rnn_hidden"]) > 0:
+            rnn_hidden = np.asarray(data["rnn_hidden"], dtype=np.float64)
+
         return cls(
             tick=int(data["tick"]),
             direction=Direction[data["direction"]],
             inputs=np.asarray(data["inputs"], dtype=np.float64),
             hidden_layers=hidden_layers,
+            rnn_hidden=rnn_hidden,
             outputs=np.asarray(data["outputs"], dtype=np.float64),
             snake=tuple(tuple(segment) for segment in data["snake"]),
             food=tuple(data["food"]),

@@ -24,16 +24,10 @@ from models.grid import Grid
 from models.position import Position
 from neural.encoder import GameStateEncoder
 from neural.network import NeuralNetwork
+from neural.policy import decide_step, new_rnn_hidden
 
 if TYPE_CHECKING:
     from replay.recorder import GameRecorder
-
-_OUTPUT_TO_DIRECTION = {
-    0: Direction.UP,
-    1: Direction.DOWN,
-    2: Direction.LEFT,
-    3: Direction.RIGHT,
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +56,9 @@ class HeadlessSimulator:
 
     def __init__(self, grid: Grid | None = None, max_steps: int | None = None) -> None:
         self._grid = grid or Grid(config.GRID_COLS, config.GRID_ROWS)
-        self._max_steps = max_steps or config.MAX_EVAL_STEPS
+        self._max_steps = (
+            max_steps if max_steps is not None else config.MAX_EVAL_STEPS
+        )
         self._encoder = GameStateEncoder()
         self._scenarios: list[Scenario] = [Scenario(food_seed=0)]
 
@@ -77,6 +73,16 @@ class HeadlessSimulator:
             raise ValueError("At least one scenario is required.")
         self._scenarios = list(scenarios)
 
+    def set_grid(self, cols: int, rows: int) -> None:
+        """Switch evaluation to a different board size (curriculum training)."""
+        self._grid = Grid(cols, rows)
+        if config.MAX_EVAL_STEPS is not None:
+            self._max_steps = cols * rows * 4
+
+    @property
+    def grid(self) -> Grid:
+        return self._grid
+
     @property
     def scenarios(self) -> list[Scenario]:
         return list(self._scenarios)
@@ -85,6 +91,8 @@ class HeadlessSimulator:
         self, genome: Genome, *, runs: int | None = None, record: bool = False
     ) -> "EvalResult | tuple[EvalResult, GameRecorder]":
         """Run the genome and return fitness plus metrics for replay."""
+        if config.SHARED_EVAL_SEEDS:
+            return self._evaluate_scenarios(genome, record=record)
         run_count = runs if runs is not None else config.EVAL_RUNS_PER_GENOME
         if config.RANDOM_FOOD_EVAL:
             return self._evaluate_random(genome, runs=run_count, record=record)
@@ -107,8 +115,8 @@ class HeadlessSimulator:
         for _ in range(run_count):
             food_seed = random.randrange(2**31)
             scenario = Scenario(food_seed=food_seed)
-            score, steps, cause = self._run(network, scenario)
-            fitnesses.append(compute_fitness(score, steps))
+            score, steps, cause, shaping = self._run(network, scenario)
+            fitnesses.append(compute_fitness(score, steps, shaping))
             scores.append(score)
             scenarios.append(scenario)
             death_causes.append(cause)
@@ -141,8 +149,8 @@ class HeadlessSimulator:
         best_key = (-1, 0)
         death_causes: list[DeathCause] = []
         for i, scenario in enumerate(self._scenarios):
-            score, steps, cause = self._run(network, scenario)
-            fitnesses.append(compute_fitness(score, steps))
+            score, steps, cause, shaping = self._run(network, scenario)
+            fitnesses.append(compute_fitness(score, steps, shaping))
             scores.append(score)
             death_causes.append(cause)
             if (score, steps) > best_key:
@@ -164,8 +172,10 @@ class HeadlessSimulator:
         recorder = self._record_run(genome, self._scenarios[best_index])
         return result, recorder
 
-    def _run(self, network: NeuralNetwork, scenario: Scenario) -> tuple[int, int, DeathCause]:
-        """Simulate one game; return (score, steps, death_cause)."""
+    def _run(
+        self, network: NeuralNetwork, scenario: Scenario
+    ) -> tuple[int, int, DeathCause, float]:
+        """Simulate one game; return (score, steps, death_cause, shaping_bonus)."""
         game = Game(
             self._grid,
             food_seed=scenario.food_seed,
@@ -173,16 +183,21 @@ class HeadlessSimulator:
             start_direction=scenario.start_direction,
         )
         steps = 0
+        shaping_bonus = 0.0
+        hidden = new_rnn_hidden()
         current = game.snake.direction
-        while game.alive and steps < self._max_steps:
-            inputs = self._encoder.encode(game)
-            outputs = network.forward(inputs).outputs
-            current = self._pick_direction(outputs, current)
+        while game.alive:
+            if self._max_steps is not None and steps >= self._max_steps:
+                return game.score, steps, "timeout", shaping_bonus
+            prev_dist = _manhattan_distance(game.snake.head(), game.food.position)
+            current, hidden, _ = decide_step(
+                network, game, self._encoder, hidden, current
+            )
             game.tick(current)
             steps += 1
-        if game.alive:
-            return game.score, steps, "timeout"
-        return game.score, steps, game.death_cause or "wall"
+            curr_dist = _manhattan_distance(game.snake.head(), game.food.position)
+            shaping_bonus += config.FITNESS_DISTANCE_SHAPING * float(prev_dist - curr_dist)
+        return game.score, steps, game.death_cause or "wall", shaping_bonus
 
     def _record_run(self, genome: Genome, scenario: Scenario) -> "GameRecorder":
         """Re-run a scenario with AIController so the full replay is captured."""
@@ -201,18 +216,15 @@ class HeadlessSimulator:
         recorder.start(genome, game)
 
         steps = 0
-        while game.alive and steps < self._max_steps:
+        while game.alive:
+            if self._max_steps is not None and steps >= self._max_steps:
+                break
             direction = controller.get_direction()
             tick_result = game.tick(direction)
             recorder.record_frame(game, controller.last_snapshot, tick_result)
             steps += 1
         return recorder
 
-    @staticmethod
-    def _pick_direction(outputs: np.ndarray, current: Direction) -> Direction:
-        """Argmax over outputs, skipping any 180-degree reversal."""
-        for index in np.argsort(outputs)[::-1]:
-            direction = _OUTPUT_TO_DIRECTION[int(index)]
-            if direction != current.opposite():
-                return direction
-        return current
+
+def _manhattan_distance(a: Position, b: Position) -> int:
+    return abs(a.x - b.x) + abs(a.y - b.y)

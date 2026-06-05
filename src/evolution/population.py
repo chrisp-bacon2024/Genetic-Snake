@@ -5,8 +5,9 @@ Reproduction model (elitism + tournament + SBX + mixed-scale mutation):
   1. Rank the current generation by fitness.
   2. Carry the top ELITE_COUNT genomes unchanged (their fitness is re-measured next
      generation, so a lucky elite cannot coast on a stale score).
-  3. Fill the rest by selecting parents via tournament, breeding children with SBX
-     (or cloning), mutating, and clipping.
+  3. Fill the rest by selecting two parents via tournament from the top
+     PARENT_POOL_FRACTION, breeding children with SBX crossover (default) or
+     cloning a single parent (asexual mode), then mutating and clipping.
 
 Fitness is assigned externally each generation by the trainer (every individual,
 elites included, is re-evaluated on the current scenario set).
@@ -64,10 +65,12 @@ class Population:
             return 0.0
         return sum(ind.fitness for ind in self._individuals) / len(self._individuals)
 
-    def evolve_next_generation(self) -> "Population":
+    def evolve_next_generation(self, *, crossover_rate: float | None = None) -> "Population":
         """Produce the next generation (elites + bred offspring)."""
         ranked = self.sorted_by_fitness()
         elite_count = min(config.ELITE_COUNT, len(ranked))
+        rate = config.CROSSOVER_RATE if crossover_rate is None else crossover_rate
+        parent_pool = self._parent_pool(ranked)
 
         next_gen: list[Individual] = [
             Individual(genome=elite.genome.copy()) for elite in ranked[:elite_count]
@@ -75,13 +78,13 @@ class Population:
 
         low, high = config.NN_WEIGHT_CLIP_RANGE
         while len(next_gen) < self.size:
-            if random.random() < config.CROSSOVER_RATE and len(ranked) >= 2:
-                parent_a = self._tournament_pick(ranked)
-                parent_b = self._tournament_pick(ranked)
+            if rate > 0.0 and random.random() < rate and len(parent_pool) >= 2:
+                parent_a = self._tournament_pick(parent_pool)
+                parent_b = self._tournament_pick(parent_pool)
                 child_a, child_b = parent_a.genome.sbx_pair(parent_b.genome)
                 children = [child_a, child_b]
             else:
-                parent = self._tournament_pick(ranked)
+                parent = self._tournament_pick(parent_pool if parent_pool else ranked)
                 children = [parent.genome.copy()]
 
             for child in children:
@@ -92,6 +95,11 @@ class Population:
                 next_gen.append(Individual(genome=child))
 
         return Population(next_gen)
+
+    def _parent_pool(self, ranked: list[Individual]) -> list[Individual]:
+        """Top fraction of the population eligible to reproduce."""
+        pool_size = max(2, int(len(ranked) * config.PARENT_POOL_FRACTION))
+        return ranked[:pool_size]
 
     def _tournament_pick(self, ranked: list[Individual]) -> Individual:
         """Sample TOURNAMENT_SIZE individuals and return the fittest."""
