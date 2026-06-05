@@ -45,7 +45,6 @@ class _ReplaySession:
     control_panel: ControlPanel
     renderer: GameRenderer
     steps: int = 0
-    max_steps: int = 0
     tick_accumulator: float = 0.0
 
 
@@ -331,7 +330,6 @@ class ReplayViewer:
             controller=controller,
             control_panel=ControlPanel(panel_surface),
             renderer=renderer,
-            max_steps=grid_cols * grid_rows * 4,
         )
 
     def _play_session(
@@ -386,14 +384,14 @@ class ReplayViewer:
                 if offset != 0:
                     navigate = _Navigate(advance=offset)
 
-            if session.game.alive and session.steps < session.max_steps:
+            if session.game.alive:
                 session.tick_accumulator += delta
                 while session.tick_accumulator >= self._tick_interval:
                     session.tick_accumulator -= self._tick_interval
                     direction = session.controller.get_direction()
                     session.game.tick(direction)
                     session.steps += 1
-                    if not session.game.alive or session.steps >= session.max_steps:
+                    if not session.game.alive:
                         break
             elif auto_advance_on_death:
                 dead_linger += delta
@@ -530,14 +528,14 @@ class LiveReplayViewer:
 
             training_active = self._is_training_active()
 
-            if session.game.alive and session.steps < session.max_steps:
+            if session.game.alive:
                 session.tick_accumulator += delta
                 while session.tick_accumulator >= self._tick_interval:
                     session.tick_accumulator -= self._tick_interval
                     direction = session.controller.get_direction()
                     session.game.tick(direction)
                     session.steps += 1
-                    if not session.game.alive or session.steps >= session.max_steps:
+                    if not session.game.alive:
                         break
             elif _gen_path(self._replays_dir, session.generation + 1) is not None:
                 self._next_gen = session.generation + 1
@@ -619,7 +617,6 @@ class LiveReplayViewer:
             controller=controller,
             control_panel=ControlPanel(panel_surface),
             renderer=renderer,
-            max_steps=grid_cols * grid_rows * 4,
         )
 
     def _draw_waiting_frame(

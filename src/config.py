@@ -16,34 +16,52 @@ RENDER_FPS = 60
 # Limit scales with snake length — longer bodies need more time to navigate safely.
 STARVATION_BASE_STEPS = 100
 STARVATION_STEPS_PER_SEGMENT = 20
-STARVATION_MAX_STEPS = 800
+# Cap scales with board area so long endgames on big grids are not cut off early.
+STARVATION_MAX_STEPS = 50_000
 
 
 def starvation_limit(body_length: int, grid_cols: int, grid_rows: int) -> int:
     """
     Max ticks without food before starvation.
 
-    Short snakes: ~120 steps (kills spin loops quickly).
-    Length 10: ~300 steps. Length 20: ~500 steps @ 10 tps ≈ 50 s.
+    Scales with snake length and board size; capped high enough for full-board runs.
     """
     grid_floor = max(grid_cols, grid_rows) * 5
-    scaled = max(STARVATION_BASE_STEPS, grid_floor) + body_length * STARVATION_STEPS_PER_SEGMENT
+    area_floor = grid_cols * grid_rows * 8
+    scaled = (
+        max(STARVATION_BASE_STEPS, grid_floor, area_floor)
+        + body_length * STARVATION_STEPS_PER_SEGMENT
+    )
     return min(scaled, STARVATION_MAX_STEPS)
+
+
+def max_win_score(grid_cols: int, grid_rows: int) -> int:
+    """Apples needed to fill the board (one cell starts occupied by the head)."""
+    return grid_cols * grid_rows - 1
+
+
+# Max grid used to size the padded board input (must match largest curriculum stage).
+MAX_GRID_COLS = GRID_COLS
+MAX_GRID_ROWS = GRID_ROWS
+
+
+def nn_input_size() -> int:
+    """Fixed encoder width: padded grid + direction + lookahead + space metrics."""
+    return MAX_GRID_COLS * MAX_GRID_ROWS + 10
+
 
 WINDOW_WIDTH = PANEL_WIDTH + GRID_COLS * CELL_SIZE
 WINDOW_HEIGHT = GRID_ROWS * CELL_SIZE
 
 # Neural network topology
-# Inputs (41): 8 rays x [wall, food, body] (24) — ray-food uses angular alignment
-#            + 1 inverse Manhattan distance to food
-#            + 4 heading-relative food offsets (fwd, right, back, left)
-#            + 4 one-hot head direction + 4 one-hot tail direction
-#            + 4 one-step lookahead (safe UP/DOWN/LEFT/RIGHT, matches output order).
+# Inputs: MAX_GRID^2 board raster + 4 direction + 4 lookahead + 2 space metrics (410 @ 20x20).
 # Changing encoder or NN_ARCH requires retraining; saved genomes/replays are not compatible.
-NN_INPUT_SIZE = 41
-# Network architecture: GRU memory over encoder inputs (41 -> GRU -> 4).
+NN_INPUT_SIZE = nn_input_size()
+# Network architecture: GRU memory over encoder inputs (grid -> GRU -> 4).
 NN_ARCH = "gru"
-NN_RNN_HIDDEN = 32
+NN_RNN_HIDDEN = 48
+# Mask illegal one-step moves (lookahead) before choosing a direction.
+MASK_UNSAFE_MOVES = True
 # Legacy MLP hidden sizes (unused when NN_ARCH == "gru"; kept for panel layout constants).
 NN_HIDDEN_SIZES = (48, 24)
 NN_OUTPUT_SIZE = 4
@@ -80,6 +98,10 @@ FITNESS_SCORE_WEIGHT = 500.0
 FITNESS_DISTANCE_SHAPING = 0.5
 # Cap so shaping alone cannot outweigh eating one apple (~500+ score term).
 FITNESS_SHAPING_CAP = 50.0
+# Reward preserving open space (helps late-game tail routing).
+FITNESS_SPACE_WEIGHT = 200.0
+# Huge bonus for filling the board (score == cols*rows - 1).
+FITNESS_WIN_BONUS = 1.0e12
 # Screening games averaged per genome; top fraction gets SELECT_EVAL_RUNS re-runs.
 EVAL_RUNS_PER_GENOME = 2
 # Top SELECT_TOP_FRACTION of the population (by screening fitness) are re-evaluated with
@@ -96,11 +118,11 @@ GENERATIONS = 200
 MAX_EVAL_STEPS = None
 
 # Curriculum: train on smaller grids before the full board (cols, rows, generations).
-CURRICULUM_ENABLED = False
+CURRICULUM_ENABLED = True
 CURRICULUM_STAGES = (
-    (5, 5, 40),
-    (10, 10, 60),
-    (20, 20, 100),
+    (5, 5, 80),
+    (10, 10, 120),
+    (20, 20, 200),
 )
 
 # Output index -> Direction mapping order

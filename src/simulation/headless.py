@@ -115,8 +115,18 @@ class HeadlessSimulator:
         for _ in range(run_count):
             food_seed = random.randrange(2**31)
             scenario = Scenario(food_seed=food_seed)
-            score, steps, cause, shaping = self._run(network, scenario)
-            fitnesses.append(compute_fitness(score, steps, shaping))
+            score, steps, cause, shaping, won, space_ratio = self._run(network, scenario)
+            fitnesses.append(
+                compute_fitness(
+                    score,
+                    steps,
+                    shaping,
+                    won=won,
+                    space_ratio=space_ratio,
+                    grid_cols=self._grid.width,
+                    grid_rows=self._grid.height,
+                )
+            )
             scores.append(score)
             scenarios.append(scenario)
             death_causes.append(cause)
@@ -149,8 +159,18 @@ class HeadlessSimulator:
         best_key = (-1, 0)
         death_causes: list[DeathCause] = []
         for i, scenario in enumerate(self._scenarios):
-            score, steps, cause, shaping = self._run(network, scenario)
-            fitnesses.append(compute_fitness(score, steps, shaping))
+            score, steps, cause, shaping, won, space_ratio = self._run(network, scenario)
+            fitnesses.append(
+                compute_fitness(
+                    score,
+                    steps,
+                    shaping,
+                    won=won,
+                    space_ratio=space_ratio,
+                    grid_cols=self._grid.width,
+                    grid_rows=self._grid.height,
+                )
+            )
             scores.append(score)
             death_causes.append(cause)
             if (score, steps) > best_key:
@@ -174,8 +194,8 @@ class HeadlessSimulator:
 
     def _run(
         self, network: NeuralNetwork, scenario: Scenario
-    ) -> tuple[int, int, DeathCause, float]:
-        """Simulate one game; return (score, steps, death_cause, shaping_bonus)."""
+    ) -> tuple[int, int, DeathCause, float, bool, float]:
+        """Simulate one game; return score, steps, cause, shaping, won, space_ratio."""
         game = Game(
             self._grid,
             food_seed=scenario.food_seed,
@@ -184,11 +204,12 @@ class HeadlessSimulator:
         )
         steps = 0
         shaping_bonus = 0.0
+        space_ratio_sum = 0.0
         hidden = new_rnn_hidden()
         current = game.snake.direction
         while game.alive:
             if self._max_steps is not None and steps >= self._max_steps:
-                return game.score, steps, "timeout", shaping_bonus
+                return game.score, steps, "timeout", shaping_bonus, False, 0.0
             prev_dist = _manhattan_distance(game.snake.head(), game.food.position)
             current, hidden, _ = decide_step(
                 network, game, self._encoder, hidden, current
@@ -197,7 +218,10 @@ class HeadlessSimulator:
             steps += 1
             curr_dist = _manhattan_distance(game.snake.head(), game.food.position)
             shaping_bonus += config.FITNESS_DISTANCE_SHAPING * float(prev_dist - curr_dist)
-        return game.score, steps, game.death_cause or "wall", shaping_bonus
+            space_ratio_sum += self._encoder.reachable_empty_ratio(game)
+        space_ratio = space_ratio_sum / max(1, steps)
+        cause = game.death_cause or "wall"
+        return game.score, steps, cause, shaping_bonus, game.won, space_ratio
 
     def _record_run(self, genome: Genome, scenario: Scenario) -> "GameRecorder":
         """Re-run a scenario with AIController so the full replay is captured."""

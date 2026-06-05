@@ -64,7 +64,7 @@ def load_records(replays_dir: Path, *, resim: bool) -> list[GenerationRecord]:
         death_cause: DeathCause | None = None
         if "death_cause" in data:
             raw = str(data["death_cause"])
-            if raw in ("body", "wall", "starved", "timeout"):
+            if raw in ("body", "wall", "starved", "timeout", "win"):
                 death_cause = raw  # type: ignore[assignment]
 
         resim_score: int | None = None
@@ -127,7 +127,7 @@ def _rolling_mean(values: np.ndarray, window: int) -> np.ndarray:
 
 
 def _death_cause_counts(records: list[GenerationRecord], window: int) -> dict[str, np.ndarray]:
-    causes: tuple[DeathCause, ...] = ("body", "wall", "starved", "timeout")
+    causes: tuple[DeathCause, ...] = ("body", "wall", "starved", "timeout", "win")
     generations = np.array([record.generation for record in records], dtype=np.int64)
     counts = {cause: np.zeros(len(records), dtype=np.float64) for cause in causes}
     half = max(0, window // 2)
@@ -197,7 +197,7 @@ def plot_analysis(
     if has_causes:
         cause_totals = {
             cause: sum(1 for record in records if record.death_cause == cause)
-            for cause in ("body", "wall", "starved", "timeout")
+            for cause in ("body", "wall", "starved", "timeout", "win")
         }
         dominant = max(cause_totals, key=cause_totals.get)
         summary_lines.append(
@@ -216,7 +216,7 @@ def plot_analysis(
             "starved": "#72b7b2",
             "timeout": "#4c78a8",
         }
-        for cause in ("body", "wall", "starved", "timeout"):
+        for cause in ("body", "wall", "starved", "timeout", "win"):
             ax_cause.plot(
                 cause_data["generations"],
                 cause_data[cause],
@@ -277,7 +277,7 @@ def print_summary(records: list[GenerationRecord], *, window: int) -> None:
         tail = records[-window:]
         counts = {
             cause: sum(1 for record in tail if record.death_cause == cause)
-            for cause in ("body", "wall", "starved", "timeout")
+            for cause in ("body", "wall", "starved", "timeout", "win")
         }
         print(f"Last {window}-gen death causes (best snake): {counts}")
 

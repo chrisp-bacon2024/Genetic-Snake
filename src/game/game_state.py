@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
-DeathCause = Literal["wall", "body", "starved", "timeout"]
+DeathCause = Literal["wall", "body", "starved", "timeout", "win"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -12,6 +12,7 @@ class TickResult:
 
     ate_food: bool = False
     died: bool = False
+    won: bool = False
     starved: bool = False
     death_cause: DeathCause | None = None
 
@@ -22,6 +23,7 @@ class GameState:
 
     score: int = 0
     alive: bool = True
+    won: bool = False
     steps_since_food: int = 0
     starved: bool = False
     death_cause: DeathCause | None = None

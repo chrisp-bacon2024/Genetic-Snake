@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
+import config
 from game.game import Game
 from models.direction import Direction
 from neural.encoder import GameStateEncoder
@@ -25,13 +26,25 @@ def new_rnn_hidden() -> np.ndarray:
     return NeuralNetwork.new_hidden_state()
 
 
-def direction_from_outputs(outputs: np.ndarray, current: Direction) -> Direction:
-    """Argmax over logits, skipping any 180-degree reversal."""
+def direction_from_outputs(
+    outputs: np.ndarray,
+    current: Direction,
+    *,
+    safe_mask: np.ndarray | None = None,
+) -> Direction:
+    """Argmax over logits, skipping 180-degree reversals and unsafe moves."""
     ranked = np.argsort(outputs)[::-1]
     for index in ranked:
+        if safe_mask is not None and not bool(safe_mask[int(index)]):
+            continue
         direction = _OUTPUT_TO_DIRECTION[int(index)]
         if direction != current.opposite():
             return direction
+    if safe_mask is not None and safe_mask.any():
+        for index in np.where(safe_mask)[0]:
+            direction = _OUTPUT_TO_DIRECTION[int(index)]
+            if direction != current.opposite():
+                return direction
     return current
 
 
@@ -45,5 +58,8 @@ def decide_step(
     """Encode, forward one GRU step, pick a valid direction."""
     inputs = encoder.encode(game)
     result, hidden_new = network.forward(inputs, hidden)
-    direction = direction_from_outputs(result.outputs, current_direction)
+    safe_mask = encoder.safe_move_mask(game) if config.MASK_UNSAFE_MOVES else None
+    direction = direction_from_outputs(
+        result.outputs, current_direction, safe_mask=safe_mask
+    )
     return direction, hidden_new, result

@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from evolution.genome import Genome
 from game.game import Game
+from models.direction import Direction
 from models.grid import Grid
 from neural.encoder import GameStateEncoder
 from neural.network import NeuralNetwork
@@ -119,13 +120,40 @@ def test_decide_step_resets_per_game() -> None:
 
 
 def test_encoder_shape_and_range() -> None:
-    section("TEST 6: Encoder produces 41 features in [0, 1]")
+    section("TEST 6: Encoder produces grid+meta features in [0, 1]")
+    encoder = GameStateEncoder()
     game = Game(Grid(config.GRID_COLS, config.GRID_ROWS), food_seed=123)
-    features = GameStateEncoder().encode(game)
+    features = encoder.encode(game)
     print(f"  feature count: {features.shape[0]} (expected {config.NN_INPUT_SIZE})")
-    assert features.shape[0] == config.NN_INPUT_SIZE == 41
+    assert features.shape[0] == config.NN_INPUT_SIZE == encoder.input_size()
     assert features.min() >= 0.0 and features.max() <= 1.0
-    print("  PASS: encoder shape and value range are correct")
+    mask = encoder.safe_move_mask(game)
+    assert mask.shape == (4,)
+    print("  PASS: encoder shape, mask, and value range are correct")
+
+
+def test_win_detection() -> None:
+    section("TEST 8: Full board triggers win")
+    grid = Grid(2, 2)
+    game = Game(grid, food_seed=0)
+    directions = (
+        Direction.UP,
+        Direction.LEFT,
+        Direction.DOWN,
+        Direction.RIGHT,
+        Direction.UP,
+        Direction.LEFT,
+        Direction.DOWN,
+    )
+    for direction in directions:
+        if not game.alive:
+            break
+        game.tick(direction)
+    assert game.won, f"expected win, got cause={game.death_cause} score={game.score}"
+    assert game.death_cause == "win"
+    assert game.score >= config.max_win_score(2, 2)
+    print(f"  score={game.score} cause={game.death_cause}")
+    print("  PASS: win detected on full 2x2 board")
 
 
 def test_genetic_operators() -> None:
@@ -159,6 +187,7 @@ def main() -> None:
     test_decide_step_resets_per_game()
     test_encoder_shape_and_range()
     test_genetic_operators()
+    test_win_detection()
     print()
     print("All tests passed.")
 

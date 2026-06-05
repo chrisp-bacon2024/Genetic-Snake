@@ -16,12 +16,13 @@ from matplotlib.animation import FuncAnimation
 
 from evolution.training_metrics import GenerationMetrics, TrainingStartInfo, format_generation_line
 
-_DEATH_CAUSES = ("body", "wall", "starved", "timeout")
+_DEATH_CAUSES = ("body", "wall", "starved", "timeout", "win")
 _DEATH_COLORS = {
     "body": "#e45756",
     "wall": "#f58518",
     "starved": "#72b7b2",
     "timeout": "#4c78a8",
+    "win": "#54a24b",
 }
 
 

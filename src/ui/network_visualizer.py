@@ -57,30 +57,21 @@ class NetworkVisualizer:
         self._surface.blit(title, title_rect)
         y += title_rect.height + self._layer_spacing
 
-        label_bottom = self._draw_layer_label("Input (8 rays)", y)
-        input_top = self._nodes_top(label_bottom)
-        input_center_y = input_top + self._input_radius
-        self._draw_input_legend(input_center_y)
-        self._draw_input_layer(snapshot.inputs, input_center_y)
-        y = input_top + self._input_layer_height + self._layer_spacing
-
-        label_bottom = self._draw_layer_label("Food (dist + dir)", y)
-        food_top = self._nodes_top(label_bottom)
-        self._draw_feature_row(
-            snapshot.inputs,
-            start_index=24,
-            count=5,
-            nodes_top=food_top,
-            base_color=config.COLOR_NEURON_INPUT_FOOD,
+        grid_count = config.MAX_GRID_COLS * config.MAX_GRID_ROWS
+        label_bottom = self._draw_layer_label(
+            f"Board ({config.MAX_GRID_COLS}x{config.MAX_GRID_ROWS})", y
         )
-        y = food_top + self._input_radius * 2 + self._layer_spacing
+        grid_top = label_bottom + self._label_to_nodes_gap
+        grid_height = self._draw_grid_raster(snapshot.inputs, grid_top)
+        y = grid_top + grid_height + self._layer_spacing
 
+        meta_start = grid_count
         label_bottom = self._draw_layer_label("Direction", y)
         direction_top = self._nodes_top(label_bottom)
         self._draw_feature_row(
             snapshot.inputs,
-            start_index=29,
-            count=8,
+            start_index=meta_start,
+            count=4,
             nodes_top=direction_top,
             base_color=config.COLOR_CONTROL_ACTIVE,
         )
@@ -90,12 +81,23 @@ class NetworkVisualizer:
         lookahead_top = self._nodes_top(label_bottom)
         self._draw_feature_row(
             snapshot.inputs,
-            start_index=37,
+            start_index=meta_start + 4,
             count=4,
             nodes_top=lookahead_top,
             base_color=config.COLOR_NEURON_INPUT_FOOD,
         )
         y = lookahead_top + self._input_radius * 2 + self._layer_spacing
+
+        label_bottom = self._draw_layer_label("Space", y)
+        space_top = self._nodes_top(label_bottom)
+        self._draw_feature_row(
+            snapshot.inputs,
+            start_index=meta_start + 8,
+            count=2,
+            nodes_top=space_top,
+            base_color=config.COLOR_NEURON_ACTIVE,
+        )
+        y = space_top + self._input_radius * 2 + self._layer_spacing
 
         for layer_index, hidden in enumerate(snapshot.hidden_layers):
             if config.NN_ARCH == "gru" and len(snapshot.hidden_layers) == 1:
@@ -214,40 +216,39 @@ class NetworkVisualizer:
             Direction.RIGHT: ">",
         }[direction]
 
-    def _input_grid_start_x(self) -> int:
-        cols = 8
-        radius = self._input_radius
-        total_width = cols * (radius * 2 + self._input_col_gap) - self._input_col_gap
-        return (config.PANEL_WIDTH - total_width) // 2 + radius
+    def _draw_grid_raster(self, inputs: np.ndarray, top: int) -> int:
+        """Mini heatmap of padded board cells; returns drawn height in pixels."""
+        cols = config.MAX_GRID_COLS
+        rows = config.MAX_GRID_ROWS
+        max_width = config.PANEL_WIDTH - 24
+        cell_size = max(4, min(10, max_width // cols))
+        grid_width = cols * cell_size
+        grid_height = rows * cell_size
+        left = (config.PANEL_WIDTH - grid_width) // 2
 
-    def _draw_input_layer(self, inputs: np.ndarray, first_row_center_y: int) -> None:
-        cols = 8
-        rows = 3
-        radius = self._input_radius
-        start_x = self._input_grid_start_x()
-
-        for ray in range(cols):
-            x = start_x + ray * (radius * 2 + self._input_col_gap)
-            for row in range(rows):
-                index = ray * 3 + row
+        for row in range(rows):
+            for col in range(cols):
+                index = row * cols + col
                 value = float(inputs[index]) if index < len(inputs) else 0.0
-                color = self._input_color(row, value)
-                node_y = first_row_center_y + row * self._input_row_height
-                pygame.draw.circle(self._surface, color, (x, node_y), radius)
+                rect = pygame.Rect(
+                    left + col * cell_size,
+                    top + row * cell_size,
+                    cell_size - 1,
+                    cell_size - 1,
+                )
+                pygame.draw.rect(self._surface, self._grid_cell_color(value), rect)
 
-    def _draw_input_legend(self, first_row_center_y: int) -> None:
-        first_column_left = self._input_grid_start_x() - self._input_radius
-        label_right = first_column_left - self._INPUT_LEGEND_GAP
+        return grid_height
 
-        header = self._input_legend_font.render(self._INPUT_LEGEND_HEADER, True, config.COLOR_TEXT_DIM)
-        header_y = first_row_center_y - self._input_row_height // 2 - 4
-        header_rect = header.get_rect(right=label_right, bottom=header_y)
-        self._surface.blit(header, header_rect)
-
-        for i, label in enumerate(self._INPUT_LABELS):
-            text = self._input_legend_font.render(label, True, config.COLOR_TEXT_DIM)
-            text_rect = text.get_rect(right=label_right, centery=first_row_center_y + i * self._input_row_height)
-            self._surface.blit(text, text_rect)
+    @staticmethod
+    def _grid_cell_color(value: float) -> tuple[int, int, int]:
+        if value >= 0.95:
+            return config.COLOR_FOOD
+        if value >= 0.65:
+            return config.COLOR_SNAKE_HEAD
+        if value >= 0.35:
+            return config.COLOR_SNAKE_BODY
+        return config.COLOR_NEURON_INACTIVE
 
     def _draw_feature_row(
         self,

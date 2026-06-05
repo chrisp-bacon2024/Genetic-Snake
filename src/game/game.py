@@ -72,8 +72,13 @@ class Game:
         return self._state.starved
 
     @property
+    def won(self) -> bool:
+        """True if the snake filled the board (win condition)."""
+        return self._state.won
+
+    @property
     def death_cause(self) -> DeathCause | None:
-        """How the snake died: wall, body, starved, or None if still alive."""
+        """How the run ended: wall, body, starved, win, or None if still alive."""
         return self._state.death_cause
 
     def reset(
@@ -133,7 +138,18 @@ class Game:
             self._state.score += 1
             self._state.steps_since_food = 0
             occupied = set(self._snake.body)
-            self._food.respawn(self._grid, occupied, self._food_rng)
+            if len(occupied) >= self._grid.width * self._grid.height:
+                self._state.alive = False
+                self._state.won = True
+                self._state.death_cause = "win"
+                return TickResult(ate_food=True, died=True, won=True, death_cause="win")
+            try:
+                self._food.respawn(self._grid, occupied, self._food_rng)
+            except RuntimeError:
+                self._state.alive = False
+                self._state.won = True
+                self._state.death_cause = "win"
+                return TickResult(ate_food=True, died=True, won=True, death_cause="win")
             return TickResult(ate_food=True)
 
         self._state.steps_since_food += 1

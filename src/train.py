@@ -3,7 +3,7 @@ Genetic-algorithm training CLI for the Snake AI.
 
 Run from the ``src/`` directory:
 
-    python train.py                      # train with config defaults (41->GRU(32)->4)
+    python train.py                      # train with config defaults (grid->GRU(48)->4)
     python train.py --generations 50     # shorter run
     python train.py --curriculum         # 5x5 -> 10x10 -> 20x20 drill schedule
     python train.py --asexual            # clone+mutate only (no SBX crossover)
@@ -13,7 +13,7 @@ Run from the ``src/`` directory:
     python train.py --generations 200 --resume   # continue from checkpoint
 
 Architecture or encoder changes require a fresh training run (old checkpoints
-are incompatible). Default network: 41 -> GRU(32) -> 4 (~7,234 genes).
+are incompatible). Default network: grid -> GRU(48) -> 4 (~72k genes @ 20x20 board).
 
 Each generation every individual (elites included) is re-evaluated, ranked by
 fitness, and bred into the next generation. The best genome of each generation

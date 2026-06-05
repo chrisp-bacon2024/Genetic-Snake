@@ -1,7 +1,7 @@
 """
 Neural network mapped to/from a Genome.
 
-Default architecture (NN_ARCH=\"gru\"): 41 inputs -> GRU(32) -> 4 linear outputs.
+Default architecture (NN_ARCH=\"gru\"): grid inputs -> GRU(48) -> 4 linear outputs.
 Recurrent hidden state must be reset at the start of each game and carried across
 ticks within a game.
 """
