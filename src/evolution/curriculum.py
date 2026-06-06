@@ -1,6 +1,10 @@
-"""Grid-size curriculum: train on small boards before the full game."""
+"""Grid-size curriculum: advance when most of the population wins the current board."""
+
+from __future__ import annotations
 
 from dataclasses import dataclass
+
+import config
 
 
 @dataclass(frozen=True, slots=True)
@@ -9,85 +13,137 @@ class CurriculumStage:
 
     cols: int
     rows: int
-    generations: int
+    max_generations: int = 0  # 0 = no cap; advance on win fraction only
 
 
 class Curriculum:
-    """Maps global generation indices to curriculum stages."""
+    """
+    Tracks the active curriculum stage and advances when enough snakes win.
 
-    def __init__(self, stages: tuple[CurriculumStage, ...]) -> None:
+    Stage progression is based on population win rate, not a fixed generation quota.
+    """
+
+    def __init__(
+        self,
+        stages: tuple[CurriculumStage, ...],
+        *,
+        stage_index: int = 0,
+        local_generations: int = 0,
+    ) -> None:
         if not stages:
             raise ValueError("Curriculum requires at least one stage.")
+        if not 0 <= stage_index < len(stages):
+            raise ValueError(f"stage_index {stage_index} out of range for {len(stages)} stages.")
         self._stages = stages
-        self._ends: list[int] = []
-        total = 0
-        for stage in stages:
-            total += stage.generations
-            self._ends.append(total)
+        self._stage_index = stage_index
+        self._local_generations = local_generations
 
     @property
     def stages(self) -> tuple[CurriculumStage, ...]:
         return self._stages
 
-    def total_generations(self) -> int:
-        return self._ends[-1]
+    @property
+    def stage_index(self) -> int:
+        return self._stage_index
 
-    def stage_for_generation(self, generation: int) -> tuple[CurriculumStage, int, int]:
-        """
-        Return (stage, local_generation_index, stage_index) for a global generation.
+    @property
+    def local_generations(self) -> int:
+        """Completed generations on the current stage (before the in-flight generation)."""
+        return self._local_generations
 
-        Generations at or beyond total map to the last stage.
-        """
-        if generation < 0:
-            raise ValueError("generation must be non-negative")
+    def current(self) -> tuple[CurriculumStage, int, int]:
+        """Return (stage, local_generation_index, stage_index)."""
+        return self._stages[self._stage_index], self._local_generations, self._stage_index
 
-        for index, end in enumerate(self._ends):
-            if generation < end:
-                start = 0 if index == 0 else self._ends[index - 1]
-                return self._stages[index], generation - start, index
+    def is_final_stage(self) -> bool:
+        return self._stage_index >= len(self._stages) - 1
 
-        last_index = len(self._stages) - 1
-        last_start = 0 if last_index == 0 else self._ends[last_index - 1]
-        return self._stages[last_index], generation - last_start, last_index
+    def increment_generation(self) -> None:
+        self._local_generations += 1
+
+    def win_count(self, individuals) -> int:
+        """Count individuals whose latest evaluation ended in a board fill (win)."""
+        return sum(1 for ind in individuals if ind.death_cause == "win")
+
+    def should_advance(self, win_count: int, population_size: int) -> bool:
+        """True when the population has mastered the current grid and a next stage exists."""
+        if self.is_final_stage() or population_size <= 0:
+            return False
+        if self._local_generations < config.CURRICULUM_MIN_GENS_PER_STAGE:
+            return False
+
+        stage = self._stages[self._stage_index]
+        if stage.max_generations > 0 and self._local_generations >= stage.max_generations:
+            return True
+
+        fraction = win_count / float(population_size)
+        return fraction >= config.CURRICULUM_ADVANCE_WIN_FRACTION
+
+    def should_stop(self, win_count: int, population_size: int) -> bool:
+        """True when the final stage is mastered and training can end early."""
+        if not config.TRAINING_STOP_ON_WIN or population_size <= 0:
+            return False
+        if not self.is_final_stage():
+            return False
+        if self._local_generations < config.TRAINING_STOP_MIN_GENS:
+            return False
+        fraction = win_count / float(population_size)
+        return fraction >= config.TRAINING_STOP_WIN_FRACTION
+
+    def advance(self) -> CurriculumStage:
+        """Move to the next stage and reset the per-stage generation counter."""
+        if self.is_final_stage():
+            return self._stages[self._stage_index]
+        self._stage_index += 1
+        self._local_generations = 0
+        return self._stages[self._stage_index]
+
+    def summary_label(self) -> str:
+        """Short description for training logs."""
+        grids = " -> ".join(f"{stage.cols}x{stage.rows}" for stage in self._stages)
+        threshold = config.CURRICULUM_ADVANCE_WIN_FRACTION
+        return f"{grids} (advance >= {threshold:.0%} wins)"
 
 
 def build_curriculum(
-    stage_config: tuple[tuple[int, int, int], ...],
-    total_generations: int,
+    stage_config: tuple[tuple[int, ...], ...] | tuple[tuple[int, int, int], ...],
 ) -> Curriculum:
     """
-    Scale configured stage lengths to ``total_generations`` while keeping proportions.
+    Build stages from config tuples.
 
-    The last stage absorbs rounding remainder so the sum matches exactly.
+    Each entry is (cols, rows) or (cols, rows, max_generations).
+    max_generations=0 means no generation cap — only win-rate advancement.
     """
-    if total_generations <= 0:
-        raise ValueError("total_generations must be positive")
-
-    base_total = sum(gens for _, _, gens in stage_config)
-    if base_total <= 0:
-        raise ValueError("stage_config must include positive generation counts")
-
     stages: list[CurriculumStage] = []
-    allocated = 0
-    for index, (cols, rows, gens) in enumerate(stage_config):
-        if index == len(stage_config) - 1:
-            stage_gens = total_generations - allocated
+    for item in stage_config:
+        if len(item) == 2:
+            cols, rows = item
+            max_generations = 0
+        elif len(item) == 3:
+            cols, rows, max_generations = item
         else:
-            stage_gens = max(1, round(total_generations * gens / base_total))
-            allocated += stage_gens
-        stages.append(CurriculumStage(cols, rows, stage_gens))
-
+            raise ValueError(f"Invalid curriculum stage config: {item!r}")
+        stages.append(
+            CurriculumStage(
+                int(cols),
+                int(rows),
+                max_generations=max(0, int(max_generations)),
+            )
+        )
     return Curriculum(tuple(stages))
 
 
 def stages_to_array(stages: tuple[CurriculumStage, ...]) -> "np.ndarray":
     import numpy as np
 
-    return np.asarray([(s.cols, s.rows, s.generations) for s in stages], dtype=np.int64)
+    return np.asarray(
+        [(stage.cols, stage.rows, stage.max_generations) for stage in stages],
+        dtype=np.int64,
+    )
 
 
 def stages_from_array(data: "np.ndarray") -> tuple[CurriculumStage, ...]:
     return tuple(
-        CurriculumStage(int(cols), int(rows), int(gens))
-        for cols, rows, gens in data
+        CurriculumStage(int(cols), int(rows), max(0, int(max_gens)))
+        for cols, rows, max_gens in data
     )

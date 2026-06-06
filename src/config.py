@@ -120,13 +120,24 @@ GENERATIONS = 200
 # Set to an int (e.g. cols * rows * 4) to cap long games during training.
 MAX_EVAL_STEPS = None
 
-# Curriculum: train on smaller grids before the full board (cols, rows, generations).
+# Curriculum: train on smaller grids; advance when enough snakes win the current board.
 CURRICULUM_ENABLED = True
 CURRICULUM_STAGES = (
-    (5, 5, 80),
-    (10, 10, 120),
-    (20, 20, 200),
+    (5, 5),
+    (10, 10),
+    (20, 20),
 )
+# Fraction of the population that must win (death_cause == "win") to advance a stage.
+# Matches SELECT_TOP_FRACTION — the parent pool size that actually reproduces.
+CURRICULUM_ADVANCE_WIN_FRACTION = 0.25
+# Minimum generations on a stage before win-rate advancement (avoids lucky early jumps).
+CURRICULUM_MIN_GENS_PER_STAGE = 5
+
+# Stop training early when enough snakes win the target board (final curriculum stage
+# or fixed grid when curriculum is off). Uses the same win fraction as stage advancement.
+TRAINING_STOP_ON_WIN = True
+TRAINING_STOP_WIN_FRACTION = CURRICULUM_ADVANCE_WIN_FRACTION
+TRAINING_STOP_MIN_GENS = CURRICULUM_MIN_GENS_PER_STAGE
 
 # Output index -> Direction mapping order
 OUTPUT_DIRECTIONS = ("UP", "DOWN", "LEFT", "RIGHT")

@@ -36,6 +36,8 @@ class GenerationMetrics:
     avg_max10: float
     best_ever_score: int
     death_cause: str
+    win_count: int = 0
+    win_needed: int = 0
 
     @property
     def grid_label(self) -> str:
@@ -43,11 +45,14 @@ class GenerationMetrics:
 
 
 def format_generation_line(metrics: GenerationMetrics) -> str:
+    wins = ""
+    if metrics.win_needed > 0:
+        wins = f" | wins {metrics.win_count}/{metrics.win_needed}"
     return (
         f"Gen {metrics.generation:4d} | grid {metrics.grid_label:>5s} | "
         f"best_fit {metrics.best_fitness:10.2f} | "
         f"avg_fit {metrics.avg_fitness:9.2f} | "
         f"best_score {metrics.best_score:3d} | max_score {metrics.max_score:3d} | "
         f"avg_max10 {metrics.avg_max10:4.1f} | "
-        f"best_ever {metrics.best_ever_score:3d} | died {metrics.death_cause}"
+        f"best_ever {metrics.best_ever_score:3d}{wins} | died {metrics.death_cause}"
     )

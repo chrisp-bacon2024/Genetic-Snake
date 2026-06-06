@@ -63,6 +63,8 @@ def enrich_metrics_fitness(metrics: GenerationMetrics) -> GenerationMetrics:
         avg_max10=metrics.avg_max10,
         best_ever_score=metrics.best_ever_score,
         death_cause=metrics.death_cause,
+        win_count=metrics.win_count,
+        win_needed=metrics.win_needed,
     )
 
 
@@ -78,6 +80,8 @@ def metrics_to_dict(metrics: GenerationMetrics) -> dict:
         "avg_max10": metrics.avg_max10,
         "best_ever_score": metrics.best_ever_score,
         "death_cause": metrics.death_cause,
+        "win_count": metrics.win_count,
+        "win_needed": metrics.win_needed,
     }
 
 
@@ -93,6 +97,8 @@ def metrics_from_dict(data: dict) -> GenerationMetrics:
         avg_max10=float(data["avg_max10"]),
         best_ever_score=int(data["best_ever_score"]),
         death_cause=str(data["death_cause"]),
+        win_count=int(data.get("win_count", 0)),
+        win_needed=int(data.get("win_needed", 0)),
     )
 
 

@@ -37,6 +37,7 @@ import numpy as np
 import config
 from evolution.curriculum import (
     Curriculum,
+    CurriculumStage,
     build_curriculum,
     stages_from_array,
     stages_to_array,
@@ -148,10 +149,10 @@ def save_checkpoint(
 ) -> None:
     """Save full population state so training can resume later."""
     curriculum_stage_index = -1
-    planned_total_generations = next_generation
+    curriculum_local_generations = 0
     if curriculum is not None:
-        planned_total_generations = curriculum.total_generations()
-        _, _, curriculum_stage_index = curriculum.stage_for_generation(next_generation)
+        curriculum_stage_index = curriculum.stage_index
+        curriculum_local_generations = curriculum.local_generations
 
     np.savez(
         path,
@@ -165,8 +166,8 @@ def save_checkpoint(
         architecture=_architecture_array(),
         curriculum_enabled=curriculum_enabled,
         curriculum_stages=stages_to_array(curriculum.stages) if curriculum is not None else np.array([]),
-        planned_total_generations=planned_total_generations,
         curriculum_stage_index=curriculum_stage_index,
+        curriculum_local_generations=curriculum_local_generations,
         crossover_rate=crossover_rate,
     )
 
@@ -226,20 +227,30 @@ def load_checkpoint(
 
     curriculum_enabled = bool(data["curriculum_enabled"]) if "curriculum_enabled" in data else False
     curriculum: Curriculum | None = None
-    if curriculum_enabled and "curriculum_stages" in data and len(data["curriculum_stages"]) > 0:
-        curriculum = Curriculum(stages_from_array(data["curriculum_stages"]))
-
-    planned_total_generations: int | None = None
-    if "planned_total_generations" in data:
-        planned_total_generations = int(data["planned_total_generations"])
-    elif curriculum is not None:
-        planned_total_generations = curriculum.total_generations()
-
     curriculum_stage_index: int | None = None
-    if "curriculum_stage_index" in data:
-        curriculum_stage_index = int(data["curriculum_stage_index"])
-    elif curriculum is not None:
-        _, _, curriculum_stage_index = curriculum.stage_for_generation(next_generation)
+    curriculum_local_generations: int | None = None
+    if curriculum_enabled:
+        if "curriculum_stage_index" in data:
+            curriculum_stage_index = int(data["curriculum_stage_index"])
+        if "curriculum_local_generations" in data:
+            curriculum_local_generations = int(data["curriculum_local_generations"])
+
+        if "curriculum_stages" in data and len(data["curriculum_stages"]) > 0:
+            raw_stages = stages_from_array(data["curriculum_stages"])
+            stages = tuple(
+                CurriculumStage(stage.cols, stage.rows, max_generations=0) for stage in raw_stages
+            )
+        else:
+            stages = build_curriculum(config.CURRICULUM_STAGES).stages
+
+        stage_index = curriculum_stage_index if curriculum_stage_index is not None else 0
+        stage_index = max(0, min(stage_index, len(stages) - 1))
+        local_generations = curriculum_local_generations if curriculum_local_generations is not None else 0
+        curriculum = Curriculum(
+            stages,
+            stage_index=stage_index,
+            local_generations=max(0, local_generations),
+        )
 
     crossover_rate = float(data["crossover_rate"]) if "crossover_rate" in data else config.CROSSOVER_RATE
 
@@ -252,8 +263,8 @@ def load_checkpoint(
         curriculum_enabled,
         curriculum,
         crossover_rate,
-        planned_total_generations,
         curriculum_stage_index,
+        curriculum_local_generations,
     )
 
 
@@ -312,24 +323,12 @@ def _crossover_rate_for_args(args: argparse.Namespace) -> float:
     return 0.0 if args.asexual else config.CROSSOVER_RATE
 
 
-def _resolve_curriculum(
-    args: argparse.Namespace,
-    checkpoint_curriculum: Curriculum | None,
-    *,
-    resume: bool,
-    start_generation: int,
-    planned_total_generations: int | None,
-) -> Curriculum | None:
+def _resolve_curriculum(args: argparse.Namespace, checkpoint_curriculum: Curriculum | None) -> Curriculum | None:
     if not args.curriculum:
         return None
     if checkpoint_curriculum is not None:
         return checkpoint_curriculum
-    if resume:
-        total = planned_total_generations
-        if total is None:
-            total = max(start_generation + args.generations, config.GENERATIONS)
-        return build_curriculum(config.CURRICULUM_STAGES, total)
-    return build_curriculum(config.CURRICULUM_STAGES, args.generations)
+    return build_curriculum(config.CURRICULUM_STAGES)
 
 
 def _apply_stage_grid(simulator: HeadlessSimulator, stage) -> None:
@@ -377,9 +376,8 @@ def run_training(
 ) -> None:
     checkpoint_path = replays_dir() / CHECKPOINT_NAME
     checkpoint_curriculum: Curriculum | None = None
-    planned_total_generations: int | None = None
-    checkpoint_stage_index: int | None = None
     crossover_rate = _crossover_rate_for_args(args)
+    config.TRAINING_STOP_ON_WIN = args.stop_on_win
 
     if args.resume:
         replays = replays_dir()
@@ -392,8 +390,8 @@ def run_training(
             checkpoint_curriculum_enabled,
             checkpoint_curriculum,
             checkpoint_crossover_rate,
-            planned_total_generations,
-            checkpoint_stage_index,
+            _checkpoint_stage_index,
+            _checkpoint_local_generations,
         ) = load_checkpoint(checkpoint_path, args.population)
         if checkpoint_curriculum_enabled != args.curriculum:
             raise ValueError(
@@ -416,26 +414,14 @@ def run_training(
         hall_of_fame = None
         resume_note = "fresh start"
 
-    curriculum = _resolve_curriculum(
-        args,
-        checkpoint_curriculum,
-        resume=args.resume,
-        start_generation=start_generation,
-        planned_total_generations=planned_total_generations,
-    )
+    curriculum = _resolve_curriculum(args, checkpoint_curriculum)
     end_generation = start_generation + args.generations
 
-    current_stage_index: int | None = None
     if args.curriculum:
         simulator = HeadlessSimulator()
-        stage, local_generation, stage_index = curriculum.stage_for_generation(start_generation)
+        stage, local_generation, stage_index = curriculum.current()
         _apply_stage_grid(simulator, stage)
         if args.resume:
-            current_stage_index = (
-                checkpoint_stage_index
-                if checkpoint_stage_index is not None and checkpoint_stage_index >= 0
-                else stage_index
-            )
             resume_curriculum_msg = (
                 f"--- Resuming curriculum on {stage.cols}x{stage.rows} "
                 f"(stage {stage_index + 1}/{len(curriculum.stages)}, "
@@ -452,7 +438,7 @@ def run_training(
     refine_runs = config.SELECT_EVAL_RUNS
 
     curriculum_note = (
-        " -> ".join(f"{s.cols}x{s.rows}x{s.generations}" for s in curriculum.stages)
+        curriculum.summary_label()
         if curriculum is not None
         else f"{config.GRID_COLS}x{config.GRID_ROWS} only"
     )
@@ -491,20 +477,7 @@ def run_training(
 
     for generation in range(start_generation, end_generation):
         if curriculum is not None:
-            stage, _, stage_index = curriculum.stage_for_generation(generation)
-            if stage_index != current_stage_index:
-                _apply_stage_grid(simulator, stage)
-                if current_stage_index is not None:
-                    best_ever_score = 0
-                    curriculum_msg = (
-                        f"--- Curriculum: now training on {stage.cols}x{stage.rows} "
-                        f"(stage {stage_index + 1}/{len(curriculum.stages)}) ---"
-                    )
-                    if observer is not None:
-                        observer.on_curriculum(curriculum_msg)
-                    else:
-                        print(curriculum_msg, flush=True)
-                current_stage_index = stage_index
+            stage, _, stage_index = curriculum.current()
             grid_cols, grid_rows = stage.cols, stage.rows
         else:
             grid_cols, grid_rows = config.GRID_COLS, config.GRID_ROWS
@@ -545,6 +518,44 @@ def run_training(
             observer=observer,
             progress_label=f"gen {generation} refining top",
         )
+
+        pop_size = len(population.individuals)
+        gen_win_count = 0
+        gen_win_needed = 0
+        stop_training = False
+        if curriculum is not None:
+            curriculum.increment_generation()
+            gen_win_count = curriculum.win_count(population.individuals)
+            if curriculum.is_final_stage():
+                gen_win_needed = max(1, int(pop_size * config.TRAINING_STOP_WIN_FRACTION))
+                if curriculum.should_stop(gen_win_count, pop_size):
+                    stop_training = True
+            else:
+                gen_win_needed = max(1, int(pop_size * config.CURRICULUM_ADVANCE_WIN_FRACTION))
+                if curriculum.should_advance(gen_win_count, pop_size):
+                    new_stage = curriculum.advance()
+                    _apply_stage_grid(simulator, new_stage)
+                    best_ever_score = 0
+                    win_fraction = gen_win_count / float(pop_size)
+                    curriculum_msg = (
+                        f"--- Curriculum: {gen_win_count}/{pop_size} wins "
+                        f"({win_fraction:.0%}) — advancing to {new_stage.cols}x{new_stage.rows} "
+                        f"(stage {curriculum.stage_index + 1}/{len(curriculum.stages)}) ---"
+                    )
+                    if observer is not None:
+                        observer.on_curriculum(curriculum_msg)
+                    else:
+                        print(curriculum_msg, flush=True)
+                    grid_cols, grid_rows = new_stage.cols, new_stage.rows
+        elif config.TRAINING_STOP_ON_WIN:
+            gen_win_count = sum(1 for ind in population.individuals if ind.death_cause == "win")
+            gen_win_needed = max(1, int(pop_size * config.TRAINING_STOP_WIN_FRACTION))
+            local_gens = generation - start_generation + 1
+            if (
+                local_gens >= config.TRAINING_STOP_MIN_GENS
+                and gen_win_count / float(pop_size) >= config.TRAINING_STOP_WIN_FRACTION
+            ):
+                stop_training = True
 
         max_score = max(ind.score for ind in population.individuals)
         ranked = population.sorted_by_fitness()
@@ -614,6 +625,8 @@ def run_training(
             avg_max10=avg_max,
             best_ever_score=best_ever_score,
             death_cause=best.death_cause,
+            win_count=gen_win_count,
+            win_needed=gen_win_needed,
         )
         append_training_log(training_log_path, metrics)
         if observer is not None:
@@ -621,10 +634,11 @@ def run_training(
         else:
             print(format_generation_line(metrics), flush=True)
 
-        population = population.evolve_next_generation(crossover_rate=crossover_rate)
-        if hall_of_fame is not None:
-            # Keep the best-ever genome in the pool so breakthroughs are not lost to luck.
-            population.individuals[-1] = Individual(genome=hall_of_fame.genome.copy())
+        if not stop_training:
+            population = population.evolve_next_generation(crossover_rate=crossover_rate)
+            if hall_of_fame is not None:
+                # Keep the best-ever genome in the pool so breakthroughs are not lost to luck.
+                population.individuals[-1] = Individual(genome=hall_of_fame.genome.copy())
 
         save_checkpoint(
             checkpoint_path,
@@ -637,6 +651,18 @@ def run_training(
             curriculum=curriculum,
             crossover_rate=crossover_rate,
         )
+
+        if stop_training:
+            win_fraction = gen_win_count / float(pop_size)
+            stop_msg = (
+                f"--- Training complete: {gen_win_count}/{pop_size} wins "
+                f"({win_fraction:.0%}) on {grid_cols}x{grid_rows} at gen {generation} ---"
+            )
+            if observer is not None:
+                observer.on_curriculum(stop_msg)
+            else:
+                print(stop_msg, flush=True)
+            break
 
     done_msg = f"Done. Best genomes saved in {replays.resolve()}"
     if observer is not None:
@@ -667,6 +693,7 @@ class _DashboardObserver:
 
     def on_progress(self, message: str) -> None:
         self._dashboard.set_progress(message)
+        print(message, flush=True)
 
     def on_generation(self, metrics: GenerationMetrics) -> None:
         self._dashboard.log_generation(metrics)
@@ -684,9 +711,14 @@ def run_training_with_dashboard(args: argparse.Namespace) -> None:
     start_generation, end_generation = resolve_generation_span(args)
     dashboard = TrainingDashboard(training_done)
     dashboard.set_generation_span(start_generation, end_generation)
-    history = load_training_history(replays_dir())
-    if history:
-        dashboard.load_metrics(history)
+    if args.resume:
+        try:
+            history = load_training_history(replays_dir())
+        except (KeyError, TypeError, ValueError) as exc:
+            print(f"Warning: could not load prior training history: {exc}", flush=True)
+            history = []
+        if history:
+            dashboard.load_metrics(history)
     observer = _DashboardObserver(dashboard)
 
     def training_worker() -> None:
@@ -770,6 +802,20 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Use curriculum stages from config (default when CURRICULUM_ENABLED).",
     )
     parser.set_defaults(curriculum=config.CURRICULUM_ENABLED)
+    stop_group = parser.add_mutually_exclusive_group()
+    stop_group.add_argument(
+        "--stop-on-win",
+        dest="stop_on_win",
+        action="store_true",
+        help="End early when enough snakes win the target board (default).",
+    )
+    stop_group.add_argument(
+        "--no-stop-on-win",
+        dest="stop_on_win",
+        action="store_false",
+        help="Run the full --generations count even after the population wins.",
+    )
+    parser.set_defaults(stop_on_win=config.TRAINING_STOP_ON_WIN)
     breeding_group = parser.add_mutually_exclusive_group()
     breeding_group.add_argument(
         "--crossover",
@@ -797,6 +843,10 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv if argv is not None else sys.argv[1:])
     if args.replays_dir:
         config.REPLAYS_DIR = args.replays_dir
+    if args.dashboard:
+        import matplotlib
+
+        matplotlib.use("TkAgg")
     if args.watch_live and args.watch_only:
         raise SystemExit("--watch-live cannot be used with --watch-only.")
     if args.watch_live and args.watch:
