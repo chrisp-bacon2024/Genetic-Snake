@@ -137,12 +137,14 @@ class Game:
             self._snake.grow()
             self._state.score += 1
             self._state.steps_since_food = 0
-            occupied = set(self._snake.body)
-            if len(occupied) >= self._grid.width * self._grid.height:
+            # Win when all apples are eaten. Body length lags grow() by one move, so
+            # score == cols*rows-1 is the reliable full-board signal (not len(body)).
+            if self._state.score >= config.max_win_score(self._grid.width, self._grid.height):
                 self._state.alive = False
                 self._state.won = True
                 self._state.death_cause = "win"
                 return TickResult(ate_food=True, died=True, won=True, death_cause="win")
+            occupied = set(self._snake.body)
             try:
                 self._food.respawn(self._grid, occupied, self._food_rng)
             except RuntimeError:

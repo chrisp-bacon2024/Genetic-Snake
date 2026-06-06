@@ -11,9 +11,10 @@ from __future__ import annotations
 import math
 import threading
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+import config
 from evolution.training_metrics import GenerationMetrics, TrainingStartInfo, format_generation_line
 
 _DEATH_CAUSES = ("body", "wall", "starved", "timeout", "win")
@@ -30,6 +31,45 @@ def _finite(value: float, default: float = 0.0) -> float:
     if math.isnan(value) or math.isinf(value):
         return default
     return value
+
+
+def _score_stages(start_info: TrainingStartInfo | None) -> tuple[tuple[int, int], ...]:
+    """Board sizes to show as separate score panels (curriculum vs fixed grid)."""
+    if start_info is not None and "->" not in start_info.curriculum_note:
+        return ((config.GRID_COLS, config.GRID_ROWS),)
+    return config.CURRICULUM_STAGES
+
+
+def _metrics_for_stage(
+    metrics: list[GenerationMetrics],
+    cols: int,
+    rows: int,
+) -> list[GenerationMetrics]:
+    return [m for m in metrics if m.grid_cols == cols and m.grid_rows == rows]
+
+
+def _stage_xlim(
+    stage_metrics: list[GenerationMetrics],
+    *,
+    min_span: int = 10,
+    right_pad: int = 2,
+) -> tuple[float, float] | None:
+    if not stage_metrics:
+        return None
+    start = stage_metrics[0].generation
+    end = stage_metrics[-1].generation
+    if end - start < min_span - 1:
+        end = start + min_span - 1
+    return (float(start) - 0.5, float(end + right_pad) + 0.5)
+
+
+def _rolling_avg_max10(stage_metrics: list[GenerationMetrics], window: int = 10) -> list[float]:
+    avgs: list[float] = []
+    for end_idx in range(len(stage_metrics)):
+        start_idx = max(0, end_idx - window + 1)
+        slice_ = stage_metrics[start_idx : end_idx + 1]
+        avgs.append(sum(m.max_score for m in slice_) / len(slice_))
+    return avgs
 
 
 def _generation_xlim(
@@ -56,6 +96,23 @@ def _generation_xlim(
         end = start + min_span - 1
 
     return (float(start) - 0.5, float(end + right_pad) + 0.5)
+
+
+@dataclass
+class _StageScorePanel:
+    cols: int
+    rows: int
+    ax: object
+    artists: dict[str, object] = field(default_factory=dict)
+    win_line: object | None = None
+
+    @property
+    def grid_label(self) -> str:
+        return f"{self.cols}x{self.rows}"
+
+    @property
+    def max_win(self) -> int:
+        return config.max_win_score(self.cols, self.rows)
 
 
 @dataclass
@@ -133,50 +190,92 @@ class TrainingDashboard:
         import matplotlib.pyplot as plt
 
         plt.style.use("ggplot")
-        fig = plt.figure(figsize=(12, 8), constrained_layout=True)
+        snap = self._snapshot()
+        stages = _score_stages(snap.start_info)
+        n_stages = len(stages)
+        fig_height = 4.5 + n_stages * 1.6
+        fig = plt.figure(figsize=(12, fig_height), constrained_layout=True)
         try:
             fig.canvas.manager.set_window_title("Genetic Snake - Training")
         except AttributeError:
             pass
 
-        grid = fig.add_gridspec(3, 2, height_ratios=[1.2, 1.0, 0.55])
-        ax_scores = fig.add_subplot(grid[0, 0])
-        ax_fitness = fig.add_subplot(grid[0, 1])
-        ax_death = fig.add_subplot(grid[1, :])
-        ax_status = fig.add_subplot(grid[2, :])
-        ax_status.axis("off")
+        height_ratios = [0.9] * n_stages + [1.0, 0.45]
+        grid = fig.add_gridspec(n_stages + 2, 2, height_ratios=height_ratios, width_ratios=[1.15, 1.0])
 
-        score_artists = {
-            "best_score": ax_scores.plot([], [], color="#5a9fd4", label="best_score", linewidth=1.5)[0],
-            "max_score": ax_scores.plot([], [], color="#9ecae1", alpha=0.85, label="max_score", linewidth=1)[0],
-            "best_ever": ax_scores.plot([], [], color="#3ecf8e", label="best_ever", linewidth=2)[0],
-            "avg_max10": ax_scores.plot(
-                [], [], color="#ffd166", linestyle="--", label="avg_max10", linewidth=1.5
-            )[0],
-        }
-        ax_scores.set_title("Scores (apples)")
-        ax_scores.set_xlabel("Generation")
-        ax_scores.grid(True, alpha=0.35)
-        ax_scores.legend(loc="upper left", fontsize=8)
+        score_panels: list[_StageScorePanel] = []
+        for row, (cols, rows) in enumerate(stages):
+            ax = fig.add_subplot(grid[row, 0])
+            max_win = config.max_win_score(cols, rows)
+            panel = _StageScorePanel(cols=cols, rows=rows, ax=ax)
+            panel.artists = {
+                "best_score": ax.plot([], [], color="#5a9fd4", label="best", linewidth=1.5)[0],
+                "max_score": ax.plot([], [], color="#9ecae1", alpha=0.85, label="max", linewidth=1)[0],
+                "best_ever": ax.plot([], [], color="#3ecf8e", label="best_ever", linewidth=2)[0],
+                "avg_max10": ax.plot(
+                    [], [], color="#ffd166", linestyle="--", label="avg_max10", linewidth=1.2
+                )[0],
+            }
+            panel.win_line = ax.axhline(
+                max_win,
+                color="#54a24b",
+                linestyle=":",
+                linewidth=1.2,
+                alpha=0.75,
+                label="win",
+            )
+            ax.set_title(f"Scores — {panel.grid_label} (max {max_win})")
+            ax.set_xlabel("Generation")
+            ax.set_ylabel("Apples")
+            ax.set_ylim(-0.5, max_win + max(2, max_win * 0.05))
+            ax.grid(True, alpha=0.35)
+            ax.legend(loc="upper left", fontsize=7, ncol=2)
+            score_panels.append(panel)
+
+        ax_fitness = fig.add_subplot(grid[0:n_stages, 1])
+        ax_death = fig.add_subplot(grid[n_stages, :])
+        ax_status = fig.add_subplot(grid[n_stages + 1, :])
+        ax_status.axis("off")
 
         fitness_artists = {
             "best_fit": ax_fitness.plot([], [], color="#b07aa1", label="best_fit", linewidth=1.5)[0],
             "avg_fit": ax_fitness.plot([], [], color="#d4a6c8", linestyle="--", label="avg_fit", linewidth=1)[0],
         }
-        ax_fitness.set_title("Fitness")
+        ax_fitness.set_title("Fitness (all stages)")
         ax_fitness.set_xlabel("Generation")
         ax_fitness.set_yscale("symlog", linthresh=100.0)
         ax_fitness.grid(True, alpha=0.35)
         ax_fitness.legend(loc="upper left", fontsize=8)
 
-        plot_axes = (ax_scores, ax_fitness, ax_death)
+        def _update_stage_scores(
+            panels: list[_StageScorePanel],
+            metrics: list[GenerationMetrics],
+        ) -> None:
+            for panel in panels:
+                stage_metrics = _metrics_for_stage(metrics, panel.cols, panel.rows)
+                ax = panel.ax
+                if not stage_metrics:
+                    for artist in panel.artists.values():
+                        artist.set_data([], [])
+                    ax.set_title(f"Scores — {panel.grid_label} (max {panel.max_win}) — not started")
+                    continue
 
-        def _apply_xlim(metrics: list[GenerationMetrics], snap: _Snapshot) -> None:
-            limits = _generation_xlim(snap.start_info, metrics)
-            if limits is None:
-                return
-            for ax in plot_axes:
-                ax.set_xlim(limits)
+                gens = [m.generation for m in stage_metrics]
+                panel.artists["best_score"].set_data(gens, [m.best_score for m in stage_metrics])
+                panel.artists["max_score"].set_data(gens, [m.max_score for m in stage_metrics])
+                panel.artists["best_ever"].set_data(gens, [m.best_ever_score for m in stage_metrics])
+                panel.artists["avg_max10"].set_data(gens, _rolling_avg_max10(stage_metrics))
+
+                limits = _stage_xlim(stage_metrics)
+                if limits is not None:
+                    ax.set_xlim(limits)
+                ax.set_ylim(-0.5, panel.max_win + max(2, panel.max_win * 0.05))
+
+                if metrics and metrics[-1].grid_cols == panel.cols and metrics[-1].grid_rows == panel.rows:
+                    status = "active"
+                else:
+                    status = "complete"
+                ax.set_title(f"Scores — {panel.grid_label} (max {panel.max_win}) — {status}")
 
         def _update_death_chart(metrics: list[GenerationMetrics], snap: _Snapshot) -> None:
             ax_death.clear()
@@ -184,7 +283,9 @@ class TrainingDashboard:
             ax_death.set_xlabel("Generation")
             ax_death.set_ylabel("Count in window")
             ax_death.grid(True, alpha=0.35, axis="y")
-            _apply_xlim(metrics, snap)
+            limits = _generation_xlim(snap.start_info, metrics)
+            if limits is not None:
+                ax_death.set_xlim(limits)
             if len(metrics) < 2:
                 return
 
@@ -272,16 +373,14 @@ class TrainingDashboard:
             try:
                 snap = self._snapshot()
                 metrics = snap.metrics
-                _apply_xlim(metrics, snap)
+
+                _update_stage_scores(score_panels, metrics)
 
                 if metrics:
                     gens = [m.generation for m in metrics]
-                    score_artists["best_score"].set_data(gens, [m.best_score for m in metrics])
-                    score_artists["max_score"].set_data(gens, [m.max_score for m in metrics])
-                    score_artists["best_ever"].set_data(gens, [m.best_ever_score for m in metrics])
-                    score_artists["avg_max10"].set_data(gens, [m.avg_max10 for m in metrics])
-                    ax_scores.relim()
-                    ax_scores.autoscale(axis="y")
+                    limits = _generation_xlim(snap.start_info, metrics)
+                    if limits is not None:
+                        ax_fitness.set_xlim(limits)
 
                     best_fit = [_finite(m.best_fitness) for m in metrics]
                     avg_fit = [_finite(m.avg_fitness) for m in metrics]
