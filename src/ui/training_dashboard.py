@@ -34,29 +34,33 @@ def _finite(value: float, default: float = 0.0) -> float:
 
 def _generation_xlim(
     start_info: TrainingStartInfo | None,
-    *,
-    span: tuple[int, int] | None,
     metrics: list[GenerationMetrics],
+    *,
+    min_span: int = 10,
+    right_pad: int = 2,
 ) -> tuple[float, float] | None:
-    if span is not None:
-        start, end_exclusive = span
+    """X-axis from the first logged generation through the latest (+ small padding)."""
+    if metrics:
+        start = metrics[0].generation
+        end = metrics[-1].generation
     elif start_info is not None:
         start = start_info.start_generation
-        end_exclusive = start_info.end_generation
+        end = start
     else:
         return None
 
-    end_inclusive = end_exclusive - 1
-    if metrics:
-        start = min(start, metrics[0].generation)
-        end_inclusive = max(end_inclusive, metrics[-1].generation)
-    return (float(start) - 0.5, float(end_inclusive) + 0.5)
+    if start_info is not None:
+        start = min(start, start_info.start_generation)
+
+    if end - start < min_span - 1:
+        end = start + min_span - 1
+
+    return (float(start) - 0.5, float(end + right_pad) + 0.5)
 
 
 @dataclass
 class _Snapshot:
     start_info: TrainingStartInfo | None
-    generation_span: tuple[int, int] | None
     metrics: list[GenerationMetrics]
     curriculum_notes: list[str]
     progress: str | None
@@ -85,26 +89,14 @@ class TrainingDashboard:
         self._done_path: str | None = None
         self._error: str | None = None
         self._closed = False
-        self._generation_span: tuple[int, int] | None = None
-
-    def set_generation_span(self, start_generation: int, end_generation: int) -> None:
-        with self._lock:
-            self._generation_span = (start_generation, end_generation)
 
     def set_start_info(self, info: TrainingStartInfo) -> None:
         with self._lock:
             self._start_info = info
-            start = info.start_generation
-            if self._metrics:
-                start = min(start, self._metrics[0].generation)
-            self._generation_span = (start, info.end_generation)
 
     def load_metrics(self, metrics: list[GenerationMetrics]) -> None:
         with self._lock:
             self._metrics = sorted(metrics, key=lambda m: m.generation)
-            if self._metrics:
-                end = self._generation_span[1] if self._generation_span else self._metrics[-1].generation + 1
-                self._generation_span = (self._metrics[0].generation, end)
 
     def add_generation(self, metrics: GenerationMetrics) -> None:
         with self._lock:
@@ -130,7 +122,6 @@ class TrainingDashboard:
         with self._lock:
             return _Snapshot(
                 start_info=self._start_info,
-                generation_span=self._generation_span,
                 metrics=list(self._metrics),
                 curriculum_notes=list(self._curriculum_notes),
                 progress=self._progress,
@@ -179,21 +170,15 @@ class TrainingDashboard:
         ax_fitness.legend(loc="upper left", fontsize=8)
 
         plot_axes = (ax_scores, ax_fitness, ax_death)
-        death_lines: dict[str, object] = {}
 
         def _apply_xlim(metrics: list[GenerationMetrics], snap: _Snapshot) -> None:
-            limits = _generation_xlim(
-                snap.start_info,
-                span=snap.generation_span,
-                metrics=metrics,
-            )
+            limits = _generation_xlim(snap.start_info, metrics)
             if limits is None:
                 return
             for ax in plot_axes:
                 ax.set_xlim(limits)
 
         def _update_death_chart(metrics: list[GenerationMetrics], snap: _Snapshot) -> None:
-            nonlocal death_lines
             ax_death.clear()
             ax_death.set_title(f"Death cause (best snake, rolling {self._death_window}-gen window)")
             ax_death.set_xlabel("Generation")

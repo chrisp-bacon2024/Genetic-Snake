@@ -44,6 +44,7 @@ from evolution.curriculum import (
 )
 from evolution.genome import Genome
 from evolution.population import Individual, Population
+from evolution.training_progress import InlineProgress
 from evolution.training_log import TRAINING_LOG_NAME, append_training_log, load_training_history
 from evolution.training_metrics import (
     GenerationMetrics,
@@ -308,7 +309,7 @@ def _evaluate_individuals(
     ]
 
     def on_progress(done: int, total: int) -> None:
-        _report_progress(observer, f"  {progress_label} {done}/{total}...")
+        _report_progress(observer, f"{progress_label} {done}/{total}...")
 
     results = evaluate_genomes_parallel(
         jobs,
@@ -366,7 +367,11 @@ def _report_progress(
     if observer is not None:
         observer.on_progress(message)
     else:
-        print(message, flush=True)
+        InlineProgress.update(message)
+
+
+def _print_generation_line(line: str, *, observer: TrainingObserver | None) -> None:
+    InlineProgress.finish(line)
 
 
 def run_training(
@@ -496,7 +501,7 @@ def run_training(
             food_seeds=screening_seeds,
             random_runs=screening_runs,
             observer=observer,
-            progress_label=f"gen {generation} screening",
+            progress_label=f"Gen {generation} screening",
         )
 
         # Phase 2: re-evaluate top fraction with multiple boards for stable ranking.
@@ -516,7 +521,7 @@ def run_training(
             food_seeds=refine_seeds,
             random_runs=refine_runs,
             observer=observer,
-            progress_label=f"gen {generation} refining top",
+            progress_label=f"Gen {generation} refining",
         )
 
         pop_size = len(population.individuals)
@@ -632,7 +637,7 @@ def run_training(
         if observer is not None:
             observer.on_generation(metrics)
         else:
-            print(format_generation_line(metrics), flush=True)
+            _print_generation_line(format_generation_line(metrics), observer=observer)
 
         if not stop_training:
             population = population.evolve_next_generation(crossover_rate=crossover_rate)
@@ -693,10 +698,11 @@ class _DashboardObserver:
 
     def on_progress(self, message: str) -> None:
         self._dashboard.set_progress(message)
-        print(message, flush=True)
+        InlineProgress.update(message)
 
     def on_generation(self, metrics: GenerationMetrics) -> None:
-        self._dashboard.log_generation(metrics)
+        self._dashboard.add_generation(metrics)
+        InlineProgress.finish(format_generation_line(metrics))
 
     def on_done(self, replays_path: Path) -> None:
         self._dashboard.set_done(replays_path)
@@ -708,9 +714,7 @@ def run_training_with_dashboard(args: argparse.Namespace) -> None:
 
     training_done = threading.Event()
     training_error: list[BaseException] = []
-    start_generation, end_generation = resolve_generation_span(args)
     dashboard = TrainingDashboard(training_done)
-    dashboard.set_generation_span(start_generation, end_generation)
     if args.resume:
         try:
             history = load_training_history(replays_dir())
