@@ -10,7 +10,7 @@ Run from the ``src/`` directory:
     python train.py --watch              # train, then watch the saved best snakes
     python train.py --watch-live         # train while replaying each gen as it finishes
     python train.py --dashboard          # train with live score/fitness charts
-    python train.py --generations 200 --resume   # continue from checkpoint
+    python train.py --generations 200 --resume   # continue from checkpoint (same grid stage)
 
 Architecture or encoder changes require a fresh training run (old checkpoints
 are incompatible). Default network: grid -> MLP -> 4 (see config.NN_HIDDEN_SIZES).
@@ -140,6 +140,12 @@ def save_checkpoint(
     crossover_rate: float,
 ) -> None:
     """Save full population state so training can resume later."""
+    curriculum_stage_index = -1
+    planned_total_generations = next_generation
+    if curriculum is not None:
+        planned_total_generations = curriculum.total_generations()
+        _, _, curriculum_stage_index = curriculum.stage_for_generation(next_generation)
+
     np.savez(
         path,
         next_generation=next_generation,
@@ -152,6 +158,8 @@ def save_checkpoint(
         architecture=_architecture_array(),
         curriculum_enabled=curriculum_enabled,
         curriculum_stages=stages_to_array(curriculum.stages) if curriculum is not None else np.array([]),
+        planned_total_generations=planned_total_generations,
+        curriculum_stage_index=curriculum_stage_index,
         crossover_rate=crossover_rate,
     )
 
@@ -159,7 +167,18 @@ def save_checkpoint(
 def load_checkpoint(
     path: Path,
     population_size: int,
-) -> tuple[int, Population, int, float, Individual | None, bool, Curriculum | None, float]:
+) -> tuple[
+    int,
+    Population,
+    int,
+    float,
+    Individual | None,
+    bool,
+    Curriculum | None,
+    float,
+    int | None,
+    int | None,
+]:
     """Restore population and training metadata from a checkpoint file."""
     if not path.exists():
         raise FileNotFoundError(
@@ -203,6 +222,18 @@ def load_checkpoint(
     if curriculum_enabled and "curriculum_stages" in data and len(data["curriculum_stages"]) > 0:
         curriculum = Curriculum(stages_from_array(data["curriculum_stages"]))
 
+    planned_total_generations: int | None = None
+    if "planned_total_generations" in data:
+        planned_total_generations = int(data["planned_total_generations"])
+    elif curriculum is not None:
+        planned_total_generations = curriculum.total_generations()
+
+    curriculum_stage_index: int | None = None
+    if "curriculum_stage_index" in data:
+        curriculum_stage_index = int(data["curriculum_stage_index"])
+    elif curriculum is not None:
+        _, _, curriculum_stage_index = curriculum.stage_for_generation(next_generation)
+
     crossover_rate = float(data["crossover_rate"]) if "crossover_rate" in data else config.CROSSOVER_RATE
 
     return (
@@ -214,6 +245,8 @@ def load_checkpoint(
         curriculum_enabled,
         curriculum,
         crossover_rate,
+        planned_total_generations,
+        curriculum_stage_index,
     )
 
 
@@ -229,11 +262,23 @@ def _crossover_rate_for_args(args: argparse.Namespace) -> float:
     return 0.0 if args.asexual else config.CROSSOVER_RATE
 
 
-def _resolve_curriculum(args: argparse.Namespace, checkpoint_curriculum: Curriculum | None) -> Curriculum | None:
+def _resolve_curriculum(
+    args: argparse.Namespace,
+    checkpoint_curriculum: Curriculum | None,
+    *,
+    resume: bool,
+    start_generation: int,
+    planned_total_generations: int | None,
+) -> Curriculum | None:
     if not args.curriculum:
         return None
     if checkpoint_curriculum is not None:
         return checkpoint_curriculum
+    if resume:
+        total = planned_total_generations
+        if total is None:
+            total = max(start_generation + args.generations, config.GENERATIONS)
+        return build_curriculum(config.CURRICULUM_STAGES, total)
     return build_curriculum(config.CURRICULUM_STAGES, args.generations)
 
 
@@ -282,6 +327,8 @@ def run_training(
 ) -> None:
     checkpoint_path = replays_dir() / CHECKPOINT_NAME
     checkpoint_curriculum: Curriculum | None = None
+    planned_total_generations: int | None = None
+    checkpoint_stage_index: int | None = None
     crossover_rate = _crossover_rate_for_args(args)
 
     if args.resume:
@@ -295,6 +342,8 @@ def run_training(
             checkpoint_curriculum_enabled,
             checkpoint_curriculum,
             checkpoint_crossover_rate,
+            planned_total_generations,
+            checkpoint_stage_index,
         ) = load_checkpoint(checkpoint_path, args.population)
         if checkpoint_curriculum_enabled != args.curriculum:
             raise ValueError(
@@ -317,19 +366,40 @@ def run_training(
         hall_of_fame = None
         resume_note = "fresh start"
 
-    curriculum = _resolve_curriculum(args, checkpoint_curriculum)
+    curriculum = _resolve_curriculum(
+        args,
+        checkpoint_curriculum,
+        resume=args.resume,
+        start_generation=start_generation,
+        planned_total_generations=planned_total_generations,
+    )
     end_generation = start_generation + args.generations
 
+    current_stage_index: int | None = None
     if args.curriculum:
         simulator = HeadlessSimulator()
-        stage, _, _ = curriculum.stage_for_generation(start_generation)
+        stage, local_generation, stage_index = curriculum.stage_for_generation(start_generation)
         _apply_stage_grid(simulator, stage)
+        if args.resume:
+            current_stage_index = (
+                checkpoint_stage_index
+                if checkpoint_stage_index is not None and checkpoint_stage_index >= 0
+                else stage_index
+            )
+            resume_curriculum_msg = (
+                f"--- Resuming curriculum on {stage.cols}x{stage.rows} "
+                f"(stage {stage_index + 1}/{len(curriculum.stages)}, "
+                f"local gen {local_generation}) ---"
+            )
+            if observer is not None:
+                observer.on_curriculum(resume_curriculum_msg)
+            else:
+                print(resume_curriculum_msg, flush=True)
     else:
         simulator = HeadlessSimulator(Grid(config.GRID_COLS, config.GRID_ROWS))
 
     top_fraction = config.SELECT_TOP_FRACTION
     refine_runs = config.SELECT_EVAL_RUNS
-    current_stage_index: int | None = None
 
     curriculum_note = (
         " -> ".join(f"{s.cols}x{s.rows}x{s.generations}" for s in curriculum.stages)
@@ -625,7 +695,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--resume",
         action="store_true",
-        help="Continue from replays/checkpoint.npz (runs --generations more generations).",
+        help="Continue from replays/checkpoint.npz (runs --generations more generations; restores curriculum stage).",
     )
     curriculum_group = parser.add_mutually_exclusive_group()
     curriculum_group.add_argument(
