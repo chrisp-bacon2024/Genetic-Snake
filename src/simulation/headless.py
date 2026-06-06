@@ -87,6 +87,10 @@ class HeadlessSimulator:
     def scenarios(self) -> list[Scenario]:
         return list(self._scenarios)
 
+    @property
+    def max_steps(self) -> int | None:
+        return self._max_steps
+
     def evaluate(
         self, genome: Genome, *, runs: int | None = None, record: bool = False
     ) -> "EvalResult | tuple[EvalResult, GameRecorder]":

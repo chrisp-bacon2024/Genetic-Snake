@@ -11,6 +11,7 @@ Run from the ``src/`` directory:
     python train.py --watch-live         # train while replaying each gen as it finishes
     python train.py --dashboard          # train with live score/fitness charts
     python train.py --generations 200 --resume   # continue from checkpoint (same grid stage)
+    python train.py --workers 0                  # parallel eval (0 = auto, use all cores-1)
 
 Architecture or encoder changes require a fresh training run (old checkpoints
 are incompatible). Default network: grid -> MLP -> 4 (see config.NN_HIDDEN_SIZES).
@@ -51,6 +52,11 @@ from evolution.training_metrics import (
 from models.grid import Grid
 from neural.network import NeuralNetwork
 from simulation.headless import HeadlessSimulator
+from simulation.parallel import (
+    build_eval_job,
+    evaluate_genomes_parallel,
+    resolve_worker_count,
+)
 
 CHECKPOINT_NAME = "checkpoint.npz"
 
@@ -77,7 +83,8 @@ def _print_start_info(info: TrainingStartInfo) -> None:
         f"breeding={info.breeding_note} "
         f"curriculum=[{info.curriculum_note}] "
         f"eval={info.eval_note} "
-        f"refine_top={info.refine_note}",
+        f"refine_top={info.refine_note} "
+        f"workers={info.workers_note}",
         flush=True,
     )
 
@@ -258,6 +265,49 @@ def _apply_result(individual: Individual, result) -> None:
     individual.death_cause = result.death_cause
 
 
+def _scenario_food_seeds(simulator: HeadlessSimulator) -> tuple[int, ...]:
+    return tuple(scenario.food_seed for scenario in simulator.scenarios)
+
+
+def _evaluate_individuals(
+    individuals: list[Individual],
+    *,
+    workers: int,
+    simulator: HeadlessSimulator,
+    grid_cols: int,
+    grid_rows: int,
+    food_seeds: tuple[int, ...],
+    random_runs: int,
+    observer: TrainingObserver | None,
+    progress_label: str,
+) -> None:
+    """Evaluate a batch of genomes in parallel (or serially when workers <= 1)."""
+    use_random_food = not food_seeds and config.RANDOM_FOOD_EVAL
+    jobs = [
+        build_eval_job(
+            individual.genome.genes,
+            grid_cols=grid_cols,
+            grid_rows=grid_rows,
+            max_steps=simulator.max_steps,
+            food_seeds=food_seeds,
+            random_runs=random_runs,
+            use_random_food=use_random_food,
+        )
+        for individual in individuals
+    ]
+
+    def on_progress(done: int, total: int) -> None:
+        _report_progress(observer, f"  {progress_label} {done}/{total}...")
+
+    results = evaluate_genomes_parallel(
+        jobs,
+        workers=workers,
+        progress_callback=on_progress,
+    )
+    for individual, result in zip(individuals, results):
+        _apply_result(individual, result)
+
+
 def _crossover_rate_for_args(args: argparse.Namespace) -> float:
     return 0.0 if args.asexual else config.CROSSOVER_RATE
 
@@ -414,6 +464,8 @@ def run_training(
         else f"random x{config.EVAL_RUNS_PER_GENOME}"
     )
     genome_len = NeuralNetwork.genome_length()
+    worker_count = resolve_worker_count(args.workers)
+    workers_note = "serial" if worker_count <= 1 else f"{worker_count} processes"
 
     arch_label = NeuralNetwork.architecture_label()
     start_info = TrainingStartInfo(
@@ -427,6 +479,7 @@ def run_training(
         curriculum_note=curriculum_note,
         eval_note=eval_note,
         refine_note=f"{top_fraction:.0%}x{refine_runs}runs",
+        workers_note=workers_note,
     )
     if observer is not None:
         observer.on_start(start_info)
@@ -459,39 +512,39 @@ def run_training(
         screening_runs = config.EVAL_RUNS_PER_GENOME
         if config.SHARED_EVAL_SEEDS:
             _set_generation_scenarios(simulator, generation, screening_runs)
+        screening_seeds = _scenario_food_seeds(simulator) if config.SHARED_EVAL_SEEDS else ()
 
-        # Phase 1: screening evaluation (averaged over screening_runs boards).
-        pop_size = len(population.individuals)
-        for index, individual in enumerate(population.individuals):
-            if index == 0 or (index + 1) % 50 == 0 or index + 1 == pop_size:
-                _report_progress(
-                    observer,
-                    f"  gen {generation} screening {index + 1}/{pop_size}...",
-                )
-            result = (
-                simulator.evaluate(individual.genome)
-                if config.SHARED_EVAL_SEEDS
-                else simulator.evaluate(individual.genome, runs=screening_runs)
-            )
-            _apply_result(individual, result)
+        _evaluate_individuals(
+            population.individuals,
+            workers=args.workers,
+            simulator=simulator,
+            grid_cols=grid_cols,
+            grid_rows=grid_rows,
+            food_seeds=screening_seeds,
+            random_runs=screening_runs,
+            observer=observer,
+            progress_label=f"gen {generation} screening",
+        )
 
         # Phase 2: re-evaluate top fraction with multiple boards for stable ranking.
         ranked_prelim = population.sorted_by_fitness()
         refine_count = max(1, int(len(ranked_prelim) * top_fraction))
+        refine_targets = ranked_prelim[:refine_count]
         if config.SHARED_EVAL_SEEDS:
             _set_generation_scenarios(simulator, generation + 1_000_000, refine_runs)
-        for index, individual in enumerate(ranked_prelim[:refine_count]):
-            if index == 0 or (index + 1) % 25 == 0 or index + 1 == refine_count:
-                _report_progress(
-                    observer,
-                    f"  gen {generation} refining top {index + 1}/{refine_count}...",
-                )
-            result = (
-                simulator.evaluate(individual.genome)
-                if config.SHARED_EVAL_SEEDS
-                else simulator.evaluate(individual.genome, runs=refine_runs)
-            )
-            _apply_result(individual, result)
+        refine_seeds = _scenario_food_seeds(simulator) if config.SHARED_EVAL_SEEDS else ()
+
+        _evaluate_individuals(
+            refine_targets,
+            workers=args.workers,
+            simulator=simulator,
+            grid_cols=grid_cols,
+            grid_rows=grid_rows,
+            food_seeds=refine_seeds,
+            random_runs=refine_runs,
+            observer=observer,
+            progress_label=f"gen {generation} refining top",
+        )
 
         max_score = max(ind.score for ind in population.individuals)
         ranked = population.sorted_by_fitness()
@@ -680,6 +733,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--generations", type=int, default=config.GENERATIONS)
     parser.add_argument("--population", type=int, default=config.POPULATION_SIZE)
     parser.add_argument("--eval-runs", type=int, default=config.EVAL_RUNS_PER_GENOME)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="Parallel evaluation processes (0=auto: CPU count minus 1, 1=serial).",
+    )
     parser.add_argument("--watch", action="store_true", help="Watch saved best snakes after training.")
     parser.add_argument(
         "--watch-live",

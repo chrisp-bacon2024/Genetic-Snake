@@ -19,6 +19,7 @@ class TrainingStartInfo:
     curriculum_note: str
     eval_note: str
     refine_note: str
+    workers_note: str = "serial"
 
 
 @dataclass(frozen=True, slots=True)

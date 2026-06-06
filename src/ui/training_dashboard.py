@@ -325,5 +325,6 @@ def _status_header(info: TrainingStartInfo) -> str:
         f"pop={info.population}  gens={info.start_generation}-{info.end_generation - 1}  "
         f"({info.resume_note})\n"
         f"arch={info.arch_label}  genes={info.genome_length}  {info.breeding_note}\n"
-        f"curriculum=[{info.curriculum_note}]  eval={info.eval_note}  {info.refine_note}"
+        f"curriculum=[{info.curriculum_note}]  eval={info.eval_note}  {info.refine_note}\n"
+        f"workers={info.workers_note}"
     )
