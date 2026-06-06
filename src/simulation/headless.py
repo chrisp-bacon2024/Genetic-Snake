@@ -46,7 +46,6 @@ class EvalResult:
     fitness: float
     score: int
     steps: int
-    avg_score: float
     best_food_seed: int
     death_cause: DeathCause
 
@@ -142,7 +141,6 @@ class HeadlessSimulator:
             fitness=float(np.mean(fitnesses)),
             score=max(scores),
             steps=best_key[1],
-            avg_score=float(np.mean(scores)),
             best_food_seed=scenarios[best_index].food_seed,
             death_cause=death_causes[best_index],
         )
@@ -185,7 +183,6 @@ class HeadlessSimulator:
             fitness=float(np.mean(fitnesses)),
             score=max(scores),
             steps=best_key[1],
-            avg_score=float(np.mean(scores)),
             best_food_seed=self._scenarios[best_index].food_seed,
             death_cause=death_causes[best_index],
         )

@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import config
-from evolution.training_metrics import GenerationMetrics, TrainingStartInfo, format_generation_line
+from evolution.training_metrics import GenerationMetrics, TrainingStartInfo
 
 _DEATH_CAUSES = ("body", "wall", "starved", "timeout", "win")
 _DEATH_COLORS = {
@@ -170,10 +170,6 @@ class TrainingDashboard:
     def set_done(self, replays_path: Path) -> None:
         with self._lock:
             self._done_path = str(replays_path.resolve())
-
-    def log_generation(self, metrics: GenerationMetrics) -> None:
-        self.add_generation(metrics)
-        print(format_generation_line(metrics), flush=True)
 
     def _snapshot(self) -> _Snapshot:
         with self._lock:

@@ -34,7 +34,7 @@ class NetworkSnapshot:
 
 class AIController(Controller):
     """
-    Drives the snake from a NeuralNetwork (GRU).
+    Drives the snake from a NeuralNetwork (MLP or GRU per config.NN_ARCH).
 
     Output index mapping (must match config.OUTPUT_DIRECTIONS):
         0 → UP, 1 → DOWN, 2 → LEFT, 3 → RIGHT
@@ -62,7 +62,7 @@ class AIController(Controller):
 
     def get_direction(self) -> Direction | None:
         """
-        Encode current game → GRU step → pick highest valid output.
+        Encode current game → network forward pass → pick highest valid output.
 
         Updates last_snapshot. Returns last direction if game is already over.
         """

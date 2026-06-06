@@ -79,9 +79,9 @@ class Curriculum:
         fraction = win_count / float(population_size)
         return fraction >= config.CURRICULUM_ADVANCE_WIN_FRACTION
 
-    def should_stop(self, win_count: int, population_size: int) -> bool:
+    def should_stop(self, win_count: int, population_size: int, *, stop_on_win: bool) -> bool:
         """True when the final stage is mastered and training can end early."""
-        if not config.TRAINING_STOP_ON_WIN or population_size <= 0:
+        if not stop_on_win or population_size <= 0:
             return False
         if not self.is_final_stage():
             return False

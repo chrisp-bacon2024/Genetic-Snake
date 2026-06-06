@@ -19,7 +19,6 @@ from dataclasses import dataclass
 import config
 from evolution.genome import Genome
 from game.game_state import DeathCause
-from neural.network import NeuralNetwork
 
 
 @dataclass
@@ -43,6 +42,8 @@ class Population:
     @classmethod
     def random(cls, size: int) -> "Population":
         """He-initialized starting population."""
+        from neural.network import NeuralNetwork
+
         return cls([Individual(genome=NeuralNetwork.random_genome()) for _ in range(size)])
 
     @property
@@ -56,9 +57,6 @@ class Population:
     def sorted_by_fitness(self) -> list[Individual]:
         """Individuals from fittest to least fit."""
         return sorted(self._individuals, key=lambda ind: ind.fitness, reverse=True)
-
-    def best(self) -> Individual:
-        return max(self._individuals, key=lambda ind: ind.fitness)
 
     def average_fitness(self) -> float:
         if not self._individuals:

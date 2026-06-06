@@ -30,7 +30,7 @@ from game.game import Game
 from models.grid import Grid
 from neural.network import NeuralNetwork
 
-from .control_panel import ControlPanel
+from .control_panel import REPLAY_FOOTER_HEIGHT, REPLAY_GEN_INPUT_GAP, ControlPanel
 from .game_renderer import GameRenderer, board_layout
 
 
@@ -69,19 +69,26 @@ _HOLD_FAST_THRESHOLD_S = 3.0
 _HOLD_REPEAT_NORMAL_S = 0.35
 _HOLD_REPEAT_FAST_S = 0.18
 _HOLD_FAST_SKIP = 10
-_GEN_INPUT_GAP = 8
+_GEN_INPUT_GAP = REPLAY_GEN_INPUT_GAP
 _NAV_BAR_HEIGHT = 16
+_NAV_BAR_BOTTOM_PAD = 4
+_NAV_BAR_TOP_GAP = 6
+_FOOTER_LABEL_HEIGHT = 12
+
+
+def _replay_nav_y() -> int:
+    return config.WINDOW_HEIGHT - _NAV_BAR_HEIGHT - _NAV_BAR_BOTTOM_PAD
 
 
 def _draw_replay_nav_bar(surface: pygame.Surface) -> None:
-    """Single horizontal row of replay shortcuts along the panel bottom."""
+    """Single horizontal row of replay shortcuts pinned to the panel bottom."""
     font = pygame.font.SysFont("consolas", 10)
     segments = ("N/Space next", "<- prev", "G gen", "Esc quit")
     rendered = [font.render(text, True, config.COLOR_TEXT_DIM) for text in segments]
     gap = 10
     total_width = sum(text.get_width() for text in rendered) + gap * (len(rendered) - 1)
     x = (config.PANEL_WIDTH - total_width) // 2
-    y = config.WINDOW_HEIGHT - _NAV_BAR_HEIGHT
+    y = _replay_nav_y()
     for text in rendered:
         surface.blit(text, (x, y))
         x += text.get_width() + gap
@@ -169,19 +176,21 @@ class _GenerationJumpInput:
         self.rect = pygame.Rect(0, 0, 0, self._BOX_HEIGHT)
         self._label_y = 0
 
-    def layout_below(self, network_bottom: int) -> None:
-        """Position the compact input directly under the network output layer."""
-        label_gap = 6
-        self._label_y = network_bottom + _GEN_INPUT_GAP
+    def layout_fixed_footer(self) -> None:
+        """Anchor the gen-jump field just above the bottom nav bar."""
+        nav_y = _replay_nav_y()
+        box_bottom = nav_y - _NAV_BAR_TOP_GAP
+        box_top = box_bottom - self._BOX_HEIGHT
+        self._label_y = box_top - _FOOTER_LABEL_HEIGHT - 6
         sample = self._font.render("9" * self._MAX_DIGITS, True, config.COLOR_TEXT)
         box_width = sample.get_width() + 12
         box_x = (config.PANEL_WIDTH - box_width) // 2
-        self.rect = pygame.Rect(
-            box_x,
-            self._label_y + label_gap + 12,
-            box_width,
-            self._BOX_HEIGHT,
-        )
+        self.rect = pygame.Rect(box_x, box_top, box_width, self._BOX_HEIGHT)
+
+    @property
+    def footer_top(self) -> int:
+        """Top of the replay footer (gen jump + nav); network diagram stops above this."""
+        return self._label_y - _GEN_INPUT_GAP
 
     @property
     def bottom_y(self) -> int:
@@ -392,7 +401,7 @@ class ReplayViewer:
         running = True
         nav_hold = _NavHoldTracker()
         session.control_panel.draw(session.controller.last_snapshot, replay_mode=True)
-        gen_input.layout_below(session.control_panel.network_bottom_y)
+        gen_input.layout_fixed_footer()
 
         while running and navigate.advance == 0 and navigate.jump_to is None:
             delta = clock.tick(config.RENDER_FPS) / 1000.0
@@ -439,7 +448,7 @@ class ReplayViewer:
             session.control_panel.draw(
                 session.controller.last_snapshot, replay_mode=True
             )
-            gen_input.layout_below(session.control_panel.network_bottom_y)
+            gen_input.layout_fixed_footer()
             gen_input.draw(panel_surface)
             _draw_replay_nav_bar(panel_surface)
             session.renderer.draw()
@@ -591,7 +600,7 @@ class LiveReplayViewer:
             session.control_panel.draw(
                 session.controller.last_snapshot, replay_mode=True
             )
-            gen_input.layout_below(session.control_panel.network_bottom_y)
+            gen_input.layout_fixed_footer()
             gen_input.draw(panel_surface)
             _draw_replay_nav_bar(panel_surface)
             session.renderer.draw()
@@ -708,7 +717,7 @@ class LiveReplayViewer:
             _waiting_message(waiting_for, self._is_training_active()),
         )
         panel_surface.fill(config.COLOR_PANEL)
-        gen_input.layout_below(140)
+        gen_input.layout_fixed_footer()
         gen_input.draw(panel_surface)
         _draw_replay_nav_bar(panel_surface)
         status = "training" if self._is_training_active() else "complete"

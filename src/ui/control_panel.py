@@ -7,8 +7,9 @@ from controllers.ai_controller import NetworkSnapshot
 
 from .network_visualizer import NetworkVisualizer
 
-# Space reserved below the output arrows for gen-jump UI + nav bar (replay viewer).
-REPLAY_FOOTER_HEIGHT = 72
+# Space reserved below the network diagram for gen-jump UI + nav bar (replay viewer).
+REPLAY_GEN_INPUT_GAP = 8
+REPLAY_FOOTER_HEIGHT = 4 + 16 + 6 + 22 + 12 + 6 + REPLAY_GEN_INPUT_GAP
 
 
 class ControlPanel:
