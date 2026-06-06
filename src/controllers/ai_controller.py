@@ -95,11 +95,17 @@ class AIController(Controller):
         self._last_snapshot = self._empty_snapshot()
 
     def _empty_snapshot(self) -> NetworkSnapshot:
-        hidden_size = NeuralNetwork.rnn_hidden_size()
+        if NeuralNetwork.is_recurrent():
+            hidden_size = NeuralNetwork.rnn_hidden_size()
+            hidden_layers = (np.zeros(hidden_size),)
+            rnn_hidden = np.zeros(hidden_size)
+        else:
+            hidden_layers = tuple(np.zeros(size) for size in config.NN_HIDDEN_SIZES)
+            rnn_hidden = np.zeros(0)
         return NetworkSnapshot(
             inputs=np.zeros(config.NN_INPUT_SIZE),
-            hidden_layers=(np.zeros(hidden_size),),
+            hidden_layers=hidden_layers,
             outputs=np.zeros(config.NN_OUTPUT_SIZE),
             chosen_direction=self._game.snake.direction,
-            rnn_hidden=np.zeros(hidden_size),
+            rnn_hidden=rnn_hidden,
         )

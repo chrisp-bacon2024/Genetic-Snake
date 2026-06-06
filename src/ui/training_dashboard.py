@@ -11,6 +11,10 @@ import threading
 from collections import Counter
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("TkAgg")
+
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
@@ -79,6 +83,7 @@ class TrainingDashboard:
         self._start_info: TrainingStartInfo | None = None
         self._metrics: list[GenerationMetrics] = []
         self._curriculum_notes: list[str] = []
+        self._progress: str | None = None
         self._done_path: str | None = None
         self._closed = False
         self._generation_span: tuple[int, int] | None = None
@@ -113,6 +118,10 @@ class TrainingDashboard:
     def add_curriculum_note(self, note: str) -> None:
         with self._lock:
             self._curriculum_notes.append(note)
+
+    def set_progress(self, message: str) -> None:
+        with self._lock:
+            self._progress = message
 
     def set_done(self, replays_path: Path) -> None:
         with self._lock:
@@ -172,6 +181,7 @@ class TrainingDashboard:
             list[GenerationMetrics],
             list[str],
             str | None,
+            str | None,
             bool,
         ]:
             with self._lock:
@@ -180,6 +190,7 @@ class TrainingDashboard:
                     self._generation_span,
                     list(self._metrics),
                     list(self._curriculum_notes),
+                    self._progress,
                     self._done_path,
                     self._closed,
                 )
@@ -219,17 +230,20 @@ class TrainingDashboard:
             ax.legend(loc="upper right", ncol=4, fontsize=8)
 
         def _update(_frame: int) -> None:
-            start_info, generation_span, metrics, curriculum_notes, done_path, closed = _snapshot()
+            start_info, generation_span, metrics, curriculum_notes, progress, done_path, closed = _snapshot()
             _apply_generation_xlim(plot_axes, start_info, span=generation_span, metrics=metrics)
 
             if not metrics:
                 if start_info is not None:
                     ax_status.clear()
                     ax_status.axis("off")
+                    status = _status_header(start_info)
+                    if progress:
+                        status += f"\n{progress}"
                     ax_status.text(
                         0.02,
                         0.85,
-                        _status_header(start_info),
+                        status,
                         transform=ax_status.transAxes,
                         fontsize=10,
                         family="monospace",
@@ -277,6 +291,8 @@ class TrainingDashboard:
             )
             if curriculum_notes:
                 status += f"\nCurriculum: {curriculum_notes[-1]}"
+            if progress:
+                status += f"\n{progress}"
             if done_path:
                 status += f"\nDone — saved to {done_path}"
             elif self._training_done.is_set():

@@ -33,11 +33,13 @@ def section(title: str) -> None:
 
 
 def test_genome_length() -> None:
-    section("TEST 1: Genome length matches GRU architecture")
-    input_size, hidden, output_size = NeuralNetwork.architecture()
-    gate = input_size * hidden + hidden * hidden + hidden
-    manual = 3 * gate + hidden * output_size + output_size
-    print(f"  Architecture: {input_size} -> GRU({hidden}) -> {output_size}")
+    section("TEST 1: Genome length matches architecture")
+    sizes = NeuralNetwork.layer_sizes()
+    manual = 0
+    for index in range(len(sizes) - 1):
+        in_dim, out_dim = sizes[index], sizes[index + 1]
+        manual += in_dim * out_dim + out_dim
+    print(f"  Architecture: {NeuralNetwork.architecture_label()}")
     print(f"  Manual total: {manual}")
     print(f"  NeuralNetwork.genome_length(): {NeuralNetwork.genome_length()}")
     assert NeuralNetwork.genome_length() == manual
@@ -48,32 +50,26 @@ def test_genome_unpack_layout() -> None:
     section("TEST 2: Genome unpack layout (known gene values)")
     length = NeuralNetwork.genome_length()
     genes = np.zeros(length, dtype=np.float64)
-    input_size = config.NN_INPUT_SIZE
-    hidden = config.NN_RNN_HIDDEN
-
+    sizes = NeuralNetwork.layer_sizes()
     idx = 0
-    for gate_no in range(3):
-        w_tag = float(gate_no * 3 + 1)
-        u_tag = float(gate_no * 3 + 2)
-        b_tag = float(gate_no * 3 + 3)
-        genes[idx : idx + input_size * hidden] = w_tag
-        idx += input_size * hidden
-        genes[idx : idx + hidden * hidden] = u_tag
-        idx += hidden * hidden
-        genes[idx : idx + hidden] = b_tag
-        idx += hidden
-
-    genes[idx : idx + hidden * config.NN_OUTPUT_SIZE] = 99.0
-    idx += hidden * config.NN_OUTPUT_SIZE
-    genes[idx : idx + config.NN_OUTPUT_SIZE] = 100.0
+    for layer_index in range(len(sizes) - 1):
+        in_dim, out_dim = sizes[layer_index], sizes[layer_index + 1]
+        tag = float(layer_index + 1)
+        genes[idx : idx + in_dim * out_dim] = tag
+        idx += in_dim * out_dim
+        genes[idx : idx + out_dim] = tag + 0.5
+        idx += out_dim
 
     net = NeuralNetwork.from_genome(Genome(genes))
-    g = net._gru
-    assert np.all(g.Wz == 1.0) and np.all(g.Uz == 2.0) and np.all(g.bz == 3.0)
-    assert np.all(g.Wr == 4.0) and np.all(g.Ur == 5.0) and np.all(g.br == 6.0)
-    assert np.all(g.Wh == 7.0) and np.all(g.Uh == 8.0) and np.all(g.bh == 9.0)
-    assert np.all(g.Wo == 99.0) and np.all(g.bo == 100.0)
-    print("  PASS: from_genome unpacks GRU gates and output layer at correct offsets")
+    if NeuralNetwork.is_recurrent():
+        g = net._gru
+        assert g is not None
+        assert np.all(g.Wz == 1.0) and np.all(g.Uz == 2.0) and np.all(g.bz == 3.0)
+    else:
+        assert net._mlp_layers is not None
+        assert np.all(net._mlp_layers[0].W == 1.0) and np.all(net._mlp_layers[0].b == 1.5)
+        assert np.all(net._mlp_layers[-1].W == float(len(sizes) - 1))
+    print("  PASS: from_genome unpacks layers at correct offsets")
 
 
 def test_genome_round_trip() -> None:
@@ -87,40 +83,39 @@ def test_genome_round_trip() -> None:
     print("  PASS: round-trip preserves every gene exactly")
 
 
-def test_gru_forward_state() -> None:
-    section("TEST 4: GRU forward updates hidden state")
+def test_forward_pass() -> None:
+    section("TEST 4: Forward pass produces valid outputs")
     np.random.seed(1)
     net = NeuralNetwork.from_genome(NeuralNetwork.random_genome())
-    h0 = new_rnn_hidden()
     x = np.random.uniform(0.0, 1.0, size=config.NN_INPUT_SIZE)
-    result, h1 = net.forward(x, h0)
+    result, hidden = net.forward(x, new_rnn_hidden())
     assert result.outputs.shape == (config.NN_OUTPUT_SIZE,)
-    assert h1.shape == (config.NN_RNN_HIDDEN,)
-    assert result.rnn_hidden.shape == h1.shape
-    assert not np.allclose(h0, h1)
-    result2, h2 = net.forward(x, h1)
-    assert not np.allclose(h1, h2)
+    assert len(result.hidden_layers) == (
+        1 if NeuralNetwork.is_recurrent() else len(config.NN_HIDDEN_SIZES)
+    )
+    if NeuralNetwork.is_recurrent():
+        assert hidden.shape == (config.NN_RNN_HIDDEN,)
+        assert not np.allclose(hidden, 0.0)
+    else:
+        assert hidden.size == 0
     print(f"  outputs={result.outputs.tolist()}")
-    print(f"  |h0|={np.linalg.norm(h0):.3f} |h1|={np.linalg.norm(h1):.3f} |h2|={np.linalg.norm(h2):.3f}")
-    print("  PASS: GRU hidden state changes each step")
+    print("  PASS: forward pass shape and activations are valid")
 
 
-def test_decide_step_resets_per_game() -> None:
-    section("TEST 5: decide_step with fresh hidden each game")
+def test_decide_step() -> None:
+    section("TEST 5: decide_step picks a direction")
     net = NeuralNetwork.from_genome(NeuralNetwork.random_genome())
     encoder = GameStateEncoder()
     game = Game(Grid(10, 10), food_seed=42)
     hidden = new_rnn_hidden()
     direction, hidden, _ = decide_step(net, game, encoder, hidden, game.snake.direction)
     game.tick(direction)
-    assert hidden.shape == (config.NN_RNN_HIDDEN,)
-    hidden2 = new_rnn_hidden()
-    assert np.allclose(hidden2, 0.0)
-    print("  PASS: new_rnn_hidden() is zero; decide_step returns updated state")
+    assert direction is not None
+    print("  PASS: decide_step returns a valid direction")
 
 
 def test_encoder_shape_and_range() -> None:
-    section("TEST 6: Encoder produces grid+meta features in [0, 1]")
+    section("TEST 6: Encoder produces ray features in [0, 1]")
     encoder = GameStateEncoder()
     game = Game(Grid(config.GRID_COLS, config.GRID_ROWS), food_seed=123)
     features = encoder.encode(game)
@@ -130,6 +125,28 @@ def test_encoder_shape_and_range() -> None:
     mask = encoder.safe_move_mask(game)
     assert mask.shape == (4,)
     print("  PASS: encoder shape, mask, and value range are correct")
+
+
+def test_genetic_operators() -> None:
+    section("TEST 7: SBX crossover, mutation, and clip")
+    np.random.seed(1)
+    length = NeuralNetwork.genome_length()
+    p1 = Genome(np.full(length, -0.5))
+    p2 = Genome(np.full(length, 0.5))
+    c1, c2 = p1.sbx_pair(p2, eta=15.0)
+    assert np.allclose(c1.genes + c2.genes, p1.genes + p2.genes)
+
+    base = Genome(np.zeros(length))
+    base.mutate(rate=0.10, magnitude=0.1)
+    changed = int(np.count_nonzero(base.genes))
+    frac = changed / length
+    assert 0.03 < frac < 0.20
+
+    wild = Genome(np.full(length, 5.0))
+    wild.clip()
+    low, high = config.NN_WEIGHT_CLIP_RANGE
+    assert wild.genes.max() <= high and wild.genes.min() >= low
+    print("  PASS: genetic operators behave as expected")
 
 
 def test_win_detection() -> None:
@@ -156,35 +173,13 @@ def test_win_detection() -> None:
     print("  PASS: win detected on full 2x2 board")
 
 
-def test_genetic_operators() -> None:
-    section("TEST 7: SBX crossover, mutation, and clip")
-    np.random.seed(1)
-    length = NeuralNetwork.genome_length()
-    p1 = Genome(np.full(length, -0.5))
-    p2 = Genome(np.full(length, 0.5))
-    c1, c2 = p1.sbx_pair(p2, eta=15.0)
-    assert np.allclose(c1.genes + c2.genes, p1.genes + p2.genes)
-
-    base = Genome(np.zeros(length))
-    base.mutate(rate=0.10, magnitude=0.1)
-    changed = int(np.count_nonzero(base.genes))
-    frac = changed / length
-    assert 0.03 < frac < 0.20
-
-    wild = Genome(np.full(length, 5.0))
-    wild.clip()
-    low, high = config.NN_WEIGHT_CLIP_RANGE
-    assert wild.genes.max() <= high and wild.genes.min() >= low
-    print("  PASS: genetic operators behave as expected")
-
-
 def main() -> None:
-    print("NeuralNetwork (GRU) + Genome + Encoder verification")
+    print(f"NeuralNetwork ({config.NN_ARCH}) + Genome + Encoder verification")
     test_genome_length()
     test_genome_unpack_layout()
     test_genome_round_trip()
-    test_gru_forward_state()
-    test_decide_step_resets_per_game()
+    test_forward_pass()
+    test_decide_step()
     test_encoder_shape_and_range()
     test_genetic_operators()
     test_win_detection()

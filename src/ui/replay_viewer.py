@@ -69,7 +69,22 @@ _HOLD_FAST_THRESHOLD_S = 3.0
 _HOLD_REPEAT_NORMAL_S = 0.35
 _HOLD_REPEAT_FAST_S = 0.18
 _HOLD_FAST_SKIP = 10
-_REPLAY_FOOTER_RESERVE = 96
+_GEN_INPUT_GAP = 8
+_NAV_BAR_HEIGHT = 16
+
+
+def _draw_replay_nav_bar(surface: pygame.Surface) -> None:
+    """Single horizontal row of replay shortcuts along the panel bottom."""
+    font = pygame.font.SysFont("consolas", 10)
+    segments = ("N/Space next", "<- prev", "G gen", "Esc quit")
+    rendered = [font.render(text, True, config.COLOR_TEXT_DIM) for text in segments]
+    gap = 10
+    total_width = sum(text.get_width() for text in rendered) + gap * (len(rendered) - 1)
+    x = (config.PANEL_WIDTH - total_width) // 2
+    y = config.WINDOW_HEIGHT - _NAV_BAR_HEIGHT
+    for text in rendered:
+        surface.blit(text, (x, y))
+        x += text.get_width() + gap
 
 
 class _NavHoldTracker:
@@ -142,13 +157,36 @@ class _Navigate:
 class _GenerationJumpInput:
     """Text field to jump directly to a generation number."""
 
+    _BOX_HEIGHT = 22
+    _MAX_DIGITS = 5
+
     def __init__(self) -> None:
         self.text = ""
         self.active = False
         self.message = ""
-        self._font = pygame.font.SysFont("consolas", 16)
-        self._hint_font = pygame.font.SysFont("consolas", 13)
-        self.rect = pygame.Rect(12, config.WINDOW_HEIGHT - 98, config.PANEL_WIDTH - 24, 28)
+        self._font = pygame.font.SysFont("consolas", 14)
+        self._hint_font = pygame.font.SysFont("consolas", 11)
+        self.rect = pygame.Rect(0, 0, 0, self._BOX_HEIGHT)
+        self._label_y = 0
+
+    def layout_below(self, network_bottom: int) -> None:
+        """Position the compact input directly under the network output layer."""
+        label_gap = 6
+        self._label_y = network_bottom + _GEN_INPUT_GAP
+        sample = self._font.render("9" * self._MAX_DIGITS, True, config.COLOR_TEXT)
+        box_width = sample.get_width() + 12
+        box_x = (config.PANEL_WIDTH - box_width) // 2
+        self.rect = pygame.Rect(
+            box_x,
+            self._label_y + label_gap + 12,
+            box_width,
+            self._BOX_HEIGHT,
+        )
+
+    @property
+    def bottom_y(self) -> int:
+        """Lowest drawn pixel (including hint line)."""
+        return self.rect.bottom + 16
 
     def handle_event(self, event: pygame.event.Event) -> tuple[bool, int | None]:
         """
@@ -198,7 +236,7 @@ class _GenerationJumpInput:
             self.text = self.text[:-1]
             self.message = ""
             return True, None
-        if event.unicode.isdigit() and len(self.text) < 6:
+        if event.unicode.isdigit() and len(self.text) < self._MAX_DIGITS:
             self.text += event.unicode
             self.message = ""
             return True, None
@@ -209,25 +247,23 @@ class _GenerationJumpInput:
 
     def draw(self, surface: pygame.Surface) -> None:
         label = self._hint_font.render("Go to gen", True, config.COLOR_TEXT_DIM)
-        surface.blit(label, (self.rect.x, self.rect.y - 18))
+        label_rect = label.get_rect(centerx=config.PANEL_WIDTH // 2, top=self._label_y)
+        surface.blit(label, label_rect)
 
         border_color = config.COLOR_CONTROL_ACTIVE if self.active else config.COLOR_CONTROL_BORDER
         fill_color = config.COLOR_CONTROL_INACTIVE
         pygame.draw.rect(surface, fill_color, self.rect, border_radius=4)
         pygame.draw.rect(surface, border_color, self.rect, width=1, border_radius=4)
 
-        display = self.text if self.text else ("type gen…" if self.active else "")
+        display = self.text if self.text else ("…" if self.active else "")
         text_color = config.COLOR_TEXT if self.text or self.active else config.COLOR_TEXT_DIM
         text_surf = self._font.render(display, True, text_color)
-        text_rect = text_surf.get_rect(midleft=(self.rect.x + 8, self.rect.centery))
-        surface.blit(text_surf, text_rect)
-
-        hint = self._hint_font.render("G focus · Enter go", True, config.COLOR_TEXT_DIM)
-        surface.blit(hint, (self.rect.x, self.rect.bottom + 4))
+        surface.blit(text_surf, text_surf.get_rect(center=self.rect.center))
 
         if self.message:
             msg = self._hint_font.render(self.message, True, config.COLOR_GAME_OVER)
-            surface.blit(msg, (self.rect.x, self.rect.bottom + 20))
+            msg_rect = msg.get_rect(centerx=config.PANEL_WIDTH // 2, top=self.rect.bottom + 2)
+            surface.blit(msg, msg_rect)
 
     def _parse(self) -> int | None:
         if not self.text:
@@ -355,6 +391,8 @@ class ReplayViewer:
         dead_linger = 0.0
         running = True
         nav_hold = _NavHoldTracker()
+        session.control_panel.draw(session.controller.last_snapshot, replay_mode=True)
+        gen_input.layout_below(session.control_panel.network_bottom_y)
 
         while running and navigate.advance == 0 and navigate.jump_to is None:
             delta = clock.tick(config.RENDER_FPS) / 1000.0
@@ -398,8 +436,12 @@ class ReplayViewer:
                 if dead_linger >= 1.5:
                     navigate = _Navigate(advance=1)
 
-            session.control_panel.draw(session.controller.last_snapshot, footer_reserve=_REPLAY_FOOTER_RESERVE)
+            session.control_panel.draw(
+                session.controller.last_snapshot, replay_mode=True
+            )
+            gen_input.layout_below(session.control_panel.network_bottom_y)
             gen_input.draw(panel_surface)
+            _draw_replay_nav_bar(panel_surface)
             session.renderer.draw()
             if waiting_for is not None:
                 _draw_status_overlay(
@@ -546,8 +588,12 @@ class LiveReplayViewer:
                 )
                 continue
 
-            session.control_panel.draw(session.controller.last_snapshot, footer_reserve=_REPLAY_FOOTER_RESERVE)
+            session.control_panel.draw(
+                session.controller.last_snapshot, replay_mode=True
+            )
+            gen_input.layout_below(session.control_panel.network_bottom_y)
             gen_input.draw(panel_surface)
+            _draw_replay_nav_bar(panel_surface)
             session.renderer.draw()
             if not session.game.alive:
                 if training_active and session.generation + 1 > self._latest_available:
@@ -662,7 +708,9 @@ class LiveReplayViewer:
             _waiting_message(waiting_for, self._is_training_active()),
         )
         panel_surface.fill(config.COLOR_PANEL)
+        gen_input.layout_below(140)
         gen_input.draw(panel_surface)
+        _draw_replay_nav_bar(panel_surface)
         status = "training" if self._is_training_active() else "complete"
         pygame.display.set_caption(f"Genetic Snake - Live watch [{status}]")
         _blit_frames(screen, panel_surface, game_surface)

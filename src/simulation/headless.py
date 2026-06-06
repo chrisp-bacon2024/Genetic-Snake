@@ -214,11 +214,11 @@ class HeadlessSimulator:
             current, hidden, _ = decide_step(
                 network, game, self._encoder, hidden, current
             )
+            space_ratio_sum += self._encoder.last_reachable_empty_ratio
             game.tick(current)
             steps += 1
             curr_dist = _manhattan_distance(game.snake.head(), game.food.position)
             shaping_bonus += config.FITNESS_DISTANCE_SHAPING * float(prev_dist - curr_dist)
-            space_ratio_sum += self._encoder.reachable_empty_ratio(game)
         space_ratio = space_ratio_sum / max(1, steps)
         cause = game.death_cause or "wall"
         return game.score, steps, cause, shaping_bonus, game.won, space_ratio

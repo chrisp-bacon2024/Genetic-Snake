@@ -3,7 +3,7 @@ Genetic-algorithm training CLI for the Snake AI.
 
 Run from the ``src/`` directory:
 
-    python train.py                      # train with config defaults (grid->GRU(48)->4)
+    python train.py                      # train with config defaults (grid->MLP->4)
     python train.py --generations 50     # shorter run
     python train.py --curriculum         # 5x5 -> 10x10 -> 20x20 drill schedule
     python train.py --asexual            # clone+mutate only (no SBX crossover)
@@ -13,7 +13,7 @@ Run from the ``src/`` directory:
     python train.py --generations 200 --resume   # continue from checkpoint
 
 Architecture or encoder changes require a fresh training run (old checkpoints
-are incompatible). Default network: grid -> GRU(48) -> 4 (~72k genes @ 20x20 board).
+are incompatible). Default network: grid -> MLP -> 4 (see config.NN_HIDDEN_SIZES).
 
 Each generation every individual (elites included) is re-evaluated, ranked by
 fitness, and bred into the next generation. The best genome of each generation
@@ -61,6 +61,8 @@ class TrainingObserver(Protocol):
     def on_start(self, info: TrainingStartInfo) -> None: ...
 
     def on_curriculum(self, message: str) -> None: ...
+
+    def on_progress(self, message: str) -> None: ...
 
     def on_generation(self, metrics: GenerationMetrics) -> None: ...
 
@@ -263,6 +265,16 @@ def resolve_generation_span(args: argparse.Namespace) -> tuple[int, int]:
     return start_generation, start_generation + args.generations
 
 
+def _report_progress(
+    observer: TrainingObserver | None,
+    message: str,
+) -> None:
+    if observer is not None:
+        observer.on_progress(message)
+    else:
+        print(message, flush=True)
+
+
 def run_training(
     args: argparse.Namespace,
     *,
@@ -333,9 +345,7 @@ def run_training(
     )
     genome_len = NeuralNetwork.genome_length()
 
-    arch_label = (
-        f"{config.NN_INPUT_SIZE}->GRU({config.NN_RNN_HIDDEN})->{config.NN_OUTPUT_SIZE}"
-    )
+    arch_label = NeuralNetwork.architecture_label()
     start_info = TrainingStartInfo(
         population=args.population,
         start_generation=start_generation,
@@ -381,7 +391,13 @@ def run_training(
             _set_generation_scenarios(simulator, generation, screening_runs)
 
         # Phase 1: screening evaluation (averaged over screening_runs boards).
-        for individual in population.individuals:
+        pop_size = len(population.individuals)
+        for index, individual in enumerate(population.individuals):
+            if index == 0 or (index + 1) % 50 == 0 or index + 1 == pop_size:
+                _report_progress(
+                    observer,
+                    f"  gen {generation} screening {index + 1}/{pop_size}...",
+                )
             result = (
                 simulator.evaluate(individual.genome)
                 if config.SHARED_EVAL_SEEDS
@@ -394,7 +410,12 @@ def run_training(
         refine_count = max(1, int(len(ranked_prelim) * top_fraction))
         if config.SHARED_EVAL_SEEDS:
             _set_generation_scenarios(simulator, generation + 1_000_000, refine_runs)
-        for individual in ranked_prelim[:refine_count]:
+        for index, individual in enumerate(ranked_prelim[:refine_count]):
+            if index == 0 or (index + 1) % 25 == 0 or index + 1 == refine_count:
+                _report_progress(
+                    observer,
+                    f"  gen {generation} refining top {index + 1}/{refine_count}...",
+                )
             result = (
                 simulator.evaluate(individual.genome)
                 if config.SHARED_EVAL_SEEDS
@@ -521,6 +542,9 @@ class _DashboardObserver:
         self._dashboard.add_curriculum_note(message)
         print(message, flush=True)
 
+    def on_progress(self, message: str) -> None:
+        self._dashboard.set_progress(message)
+
     def on_generation(self, metrics: GenerationMetrics) -> None:
         self._dashboard.log_generation(metrics)
 
@@ -550,10 +574,10 @@ def run_training_with_dashboard(args: argparse.Namespace) -> None:
         finally:
             training_done.set()
 
-    thread = threading.Thread(target=training_worker, name="training", daemon=True)
+    thread = threading.Thread(target=training_worker, name="training", daemon=False)
     thread.start()
     dashboard.run()
-    thread.join(timeout=0.1)
+    thread.join()
     if training_error:
         raise training_error[0]
 

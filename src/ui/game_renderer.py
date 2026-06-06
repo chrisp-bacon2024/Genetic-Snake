@@ -97,7 +97,15 @@ class GameRenderer:
 
     def _draw_hud(self) -> None:
         score_text = self._score_font.render(f"Score: {self._game.score}", True, config.COLOR_TEXT)
-        self._surface.blit(score_text, (12, 10))
+        text_rect = score_text.get_rect()
+        if self._offset_y >= text_rect.height + 10:
+            text_rect.topleft = (self._offset_x + 8, self._offset_y - text_rect.height - 6)
+        else:
+            text_rect.topright = (
+                self._offset_x + self.board_width - 8,
+                self._offset_y + 8,
+            )
+        self._surface.blit(score_text, text_rect)
 
     def _draw_game_over(self) -> None:
         overlay = pygame.Surface((self.board_width, self.board_height), pygame.SRCALPHA)

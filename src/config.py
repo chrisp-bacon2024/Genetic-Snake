@@ -40,30 +40,33 @@ def max_win_score(grid_cols: int, grid_rows: int) -> int:
     return grid_cols * grid_rows - 1
 
 
-# Max grid used to size the padded board input (must match largest curriculum stage).
+# Max grid used for curriculum sizing (ray encoder is grid-size agnostic).
 MAX_GRID_COLS = GRID_COLS
 MAX_GRID_ROWS = GRID_ROWS
 
+# Ray encoder: 8 heading-relative rays x [wall, food, body].
+ENCODER_RAY_COUNT = 8
+
 
 def nn_input_size() -> int:
-    """Fixed encoder width: padded grid + direction + lookahead + space metrics."""
-    return MAX_GRID_COLS * MAX_GRID_ROWS + 10
+    """Ray vision + food + direction + lookahead + space metrics."""
+    return ENCODER_RAY_COUNT * 3 + 5 + 4 + 4 + 4 + 2
 
 
 WINDOW_WIDTH = PANEL_WIDTH + GRID_COLS * CELL_SIZE
 WINDOW_HEIGHT = GRID_ROWS * CELL_SIZE
 
 # Neural network topology
-# Inputs: MAX_GRID^2 board raster + 4 direction + 4 lookahead + 2 space metrics (410 @ 20x20).
+# Inputs: 8 rays (24) + food (5) + head/tail dir (8) + lookahead (4) + space (2) = 43.
 # Changing encoder or NN_ARCH requires retraining; saved genomes/replays are not compatible.
 NN_INPUT_SIZE = nn_input_size()
-# Network architecture: GRU memory over encoder inputs (grid -> GRU -> 4).
-NN_ARCH = "gru"
+# Network architecture: feedforward MLP (rays -> hidden -> 4) or GRU memory.
+NN_ARCH = "mlp"
 NN_RNN_HIDDEN = 48
 # Mask illegal one-step moves (lookahead) before choosing a direction.
 MASK_UNSAFE_MOVES = True
-# Legacy MLP hidden sizes (unused when NN_ARCH == "gru"; kept for panel layout constants).
-NN_HIDDEN_SIZES = (48, 24)
+# Single hidden layer — rays + fitness-aligned space cues replace the full board.
+NN_HIDDEN_SIZES = (32,)
 NN_OUTPUT_SIZE = 4
 NN_WEIGHT_INIT_RANGE = (-1.0, 1.0)
 # Genes are clamped to this range after crossover/mutation so weights cannot explode.
@@ -107,7 +110,7 @@ EVAL_RUNS_PER_GENOME = 2
 # Top SELECT_TOP_FRACTION of the population (by screening fitness) are re-evaluated with
 # this many boards; selection/elites use the averaged result.
 SELECT_TOP_FRACTION = 0.25
-SELECT_EVAL_RUNS = 5
+SELECT_EVAL_RUNS = 3
 # When True, every snake in a generation plays the same food seeds (fair comparison).
 SHARED_EVAL_SEEDS = True
 # Each snake gets a fresh random food seed every evaluation when SHARED_EVAL_SEEDS is False.
