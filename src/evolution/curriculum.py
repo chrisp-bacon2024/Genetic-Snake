@@ -16,11 +16,27 @@ class CurriculumStage:
     max_generations: int = 0  # 0 = no cap; advance on win fraction only
 
 
+def wins_required(population_size: int, win_fraction: float) -> int:
+    """Minimum parent-pool wins to satisfy a population win fraction (matches training logs)."""
+    return max(1, int(population_size * win_fraction))
+
+
+def parent_pool_wins(individuals, top_fraction: float | None = None) -> tuple[int, int]:
+    """
+    Count wins among the top fitness fraction (refine / parent pool).
+
+    Returns (win_count, pool_size). Only these snakes are used for reproduction.
+    """
+    fraction = config.SELECT_TOP_FRACTION if top_fraction is None else top_fraction
+    ranked = sorted(individuals, key=lambda ind: ind.fitness, reverse=True)
+    pool_size = max(1, int(len(ranked) * fraction))
+    wins = sum(1 for ind in ranked[:pool_size] if ind.death_cause == "win")
+    return wins, pool_size
+
+
 class Curriculum:
     """
-    Tracks the active curriculum stage and advances when enough snakes win.
-
-    Stage progression is based on population win rate, not a fixed generation quota.
+    Tracks the active curriculum stage and advances when enough parent-pool snakes win.
     """
 
     def __init__(
@@ -61,9 +77,13 @@ class Curriculum:
     def increment_generation(self) -> None:
         self._local_generations += 1
 
+    def parent_pool_wins(self, individuals, top_fraction: float | None = None) -> tuple[int, int]:
+        return parent_pool_wins(individuals, top_fraction)
+
     def win_count(self, individuals) -> int:
-        """Count individuals whose latest evaluation ended in a board fill (win)."""
-        return sum(1 for ind in individuals if ind.death_cause == "win")
+        """Count wins in the parent pool (top SELECT_TOP_FRACTION by fitness)."""
+        wins, _ = self.parent_pool_wins(individuals)
+        return wins
 
     def should_advance(self, win_count: int, population_size: int) -> bool:
         """True when the population has mastered the current grid and a next stage exists."""
@@ -76,8 +96,8 @@ class Curriculum:
         if stage.max_generations > 0 and self._local_generations >= stage.max_generations:
             return True
 
-        fraction = win_count / float(population_size)
-        return fraction >= config.CURRICULUM_ADVANCE_WIN_FRACTION
+        win_needed = wins_required(population_size, config.CURRICULUM_ADVANCE_WIN_FRACTION)
+        return win_count >= win_needed
 
     def should_stop(self, win_count: int, population_size: int, *, stop_on_win: bool) -> bool:
         """True when the final stage is mastered and training can end early."""
@@ -87,8 +107,8 @@ class Curriculum:
             return False
         if self._local_generations < config.TRAINING_STOP_MIN_GENS:
             return False
-        fraction = win_count / float(population_size)
-        return fraction >= config.TRAINING_STOP_WIN_FRACTION
+        win_needed = wins_required(population_size, config.TRAINING_STOP_WIN_FRACTION)
+        return win_count >= win_needed
 
     def advance(self) -> CurriculumStage:
         """Move to the next stage and reset the per-stage generation counter."""
@@ -102,7 +122,7 @@ class Curriculum:
         """Short description for training logs."""
         grids = " -> ".join(f"{stage.cols}x{stage.rows}" for stage in self._stages)
         threshold = config.CURRICULUM_ADVANCE_WIN_FRACTION
-        return f"{grids} (advance >= {threshold:.0%} wins)"
+        return f"{grids} (top {config.SELECT_TOP_FRACTION:.0%} need >= {threshold:.0%} wins)"
 
 
 def build_curriculum(

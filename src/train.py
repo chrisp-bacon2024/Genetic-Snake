@@ -42,6 +42,8 @@ from evolution.checkpoint import (
 from evolution.curriculum import (
     Curriculum,
     build_curriculum,
+    parent_pool_wins,
+    wins_required,
 )
 from evolution.population import Individual, Population
 from evolution.training_progress import InlineProgress
@@ -347,21 +349,22 @@ def run_training(
         stop_training = False
         if curriculum is not None:
             curriculum.increment_generation()
-            gen_win_count = curriculum.win_count(population.individuals)
+            gen_win_count, parent_pool_size = parent_pool_wins(population.individuals)
             if curriculum.is_final_stage():
-                gen_win_needed = max(1, int(pop_size * config.TRAINING_STOP_WIN_FRACTION))
+                gen_win_needed = wins_required(pop_size, config.TRAINING_STOP_WIN_FRACTION)
                 if curriculum.should_stop(gen_win_count, pop_size, stop_on_win=stop_on_win):
                     stop_training = True
             else:
-                gen_win_needed = max(1, int(pop_size * config.CURRICULUM_ADVANCE_WIN_FRACTION))
+                gen_win_needed = wins_required(pop_size, config.CURRICULUM_ADVANCE_WIN_FRACTION)
                 if curriculum.should_advance(gen_win_count, pop_size):
                     new_stage = curriculum.advance()
                     _apply_stage_grid(simulator, new_stage)
                     best_ever_score = 0
                     win_fraction = gen_win_count / float(pop_size)
                     curriculum_msg = (
-                        f"--- Curriculum: {gen_win_count}/{pop_size} wins "
-                        f"({win_fraction:.0%}) — advancing to {new_stage.cols}x{new_stage.rows} "
+                        f"--- Curriculum: {gen_win_count}/{parent_pool_size} wins in top "
+                        f"{config.SELECT_TOP_FRACTION:.0%} ({win_fraction:.0%} of pop) — advancing to "
+                        f"{new_stage.cols}x{new_stage.rows} "
                         f"(stage {curriculum.stage_index + 1}/{len(curriculum.stages)}) ---"
                     )
                     if observer is not None:
@@ -370,12 +373,12 @@ def run_training(
                         print(curriculum_msg, flush=True)
                     grid_cols, grid_rows = new_stage.cols, new_stage.rows
         elif stop_on_win:
-            gen_win_count = sum(1 for ind in population.individuals if ind.death_cause == "win")
-            gen_win_needed = max(1, int(pop_size * config.TRAINING_STOP_WIN_FRACTION))
+            gen_win_count, _ = parent_pool_wins(population.individuals)
+            gen_win_needed = wins_required(pop_size, config.TRAINING_STOP_WIN_FRACTION)
             local_gens = generation - start_generation + 1
             if (
                 local_gens >= config.TRAINING_STOP_MIN_GENS
-                and gen_win_count / float(pop_size) >= config.TRAINING_STOP_WIN_FRACTION
+                and gen_win_count >= gen_win_needed
             ):
                 stop_training = True
 
