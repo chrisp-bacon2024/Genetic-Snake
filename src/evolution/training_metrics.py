@@ -19,6 +19,7 @@ class TrainingStartInfo:
     curriculum_note: str
     eval_note: str
     refine_note: str
+    max_steps_note: str = "none"
     workers_note: str = "serial"
 
 

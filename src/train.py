@@ -12,6 +12,7 @@ Run from the ``src/`` directory:
     python train.py --dashboard          # train with live score/fitness charts
     python train.py --generations 200 --resume   # continue from checkpoint (same grid stage)
     python train.py --workers 0                  # parallel eval (0 = auto, use all cores-1)
+    python train.py --max-steps 3200             # cap long evaluation games
 
 Architecture or encoder changes require a fresh training run (old checkpoints
 are incompatible). Default network: grid -> MLP -> 4 (see config.NN_HIDDEN_SIZES).
@@ -86,6 +87,7 @@ def _print_start_info(info: TrainingStartInfo) -> None:
         f"curriculum=[{info.curriculum_note}] "
         f"eval={info.eval_note} "
         f"refine_top={info.refine_note} "
+        f"max_steps={info.max_steps_note} "
         f"workers={info.workers_note}",
         flush=True,
     )
@@ -241,8 +243,9 @@ def run_training(
     curriculum = _resolve_curriculum(args, checkpoint_curriculum)
     end_generation = start_generation + args.generations
 
+    max_steps = args.max_steps
     if args.curriculum:
-        simulator = HeadlessSimulator()
+        simulator = HeadlessSimulator(max_steps=max_steps)
         stage, local_generation, stage_index = curriculum.current()
         _apply_stage_grid(simulator, stage)
         if args.resume:
@@ -256,10 +259,15 @@ def run_training(
             else:
                 print(resume_curriculum_msg, flush=True)
     else:
-        simulator = HeadlessSimulator(Grid(config.GRID_COLS, config.GRID_ROWS))
+        simulator = HeadlessSimulator(
+            Grid(config.GRID_COLS, config.GRID_ROWS),
+            max_steps=max_steps,
+        )
 
+    single_shot = args.single_shot or config.TRAINING_SINGLE_SHOT_EVAL
     top_fraction = config.SELECT_TOP_FRACTION
     refine_runs = config.SELECT_EVAL_RUNS
+    screening_runs = 1 if single_shot else args.eval_runs
 
     curriculum_note = (
         curriculum.summary_label()
@@ -267,15 +275,29 @@ def run_training(
         else f"{config.GRID_COLS}x{config.GRID_ROWS} only"
     )
 
-    breeding_note = "asexual" if crossover_rate <= 0.0 else f"crossover top {config.PARENT_POOL_FRACTION:.0%}"
-    eval_note = (
-        f"shared_seeds x{config.EVAL_RUNS_PER_GENOME}"
-        if config.SHARED_EVAL_SEEDS
-        else f"random x{config.EVAL_RUNS_PER_GENOME}"
-    )
+    if crossover_rate <= 0.0:
+        breeding_note = "asexual"
+    elif config.CHAMPION_ASEXUAL_FRACTION > 0.0:
+        breeding_note = (
+            f"crossover top {config.PARENT_POOL_FRACTION:.0%} "
+            f"+ champion {config.CHAMPION_ASEXUAL_FRACTION:.0%}"
+        )
+    else:
+        breeding_note = f"crossover top {config.PARENT_POOL_FRACTION:.0%}"
+    if single_shot:
+        eval_note = "single-shot (1 board per snake)"
+        refine_note = "off"
+    else:
+        eval_note = (
+            f"shared_seeds x{screening_runs}"
+            if config.SHARED_EVAL_SEEDS
+            else f"random x{screening_runs}"
+        )
+        refine_note = f"{top_fraction:.0%}x{refine_runs}runs"
     genome_len = NeuralNetwork.genome_length()
     worker_count = resolve_worker_count(args.workers)
     workers_note = "serial" if worker_count <= 1 else f"{worker_count} processes"
+    max_steps_note = "none" if simulator.max_steps is None else str(simulator.max_steps)
 
     arch_label = NeuralNetwork.architecture_label()
     start_info = TrainingStartInfo(
@@ -288,7 +310,8 @@ def run_training(
         breeding_note=breeding_note,
         curriculum_note=curriculum_note,
         eval_note=eval_note,
-        refine_note=f"{top_fraction:.0%}x{refine_runs}runs",
+        refine_note=refine_note,
+        max_steps_note=max_steps_note,
         workers_note=workers_note,
     )
     if observer is not None:
@@ -306,11 +329,15 @@ def run_training(
         else:
             grid_cols, grid_rows = config.GRID_COLS, config.GRID_ROWS
 
-        screening_runs = config.EVAL_RUNS_PER_GENOME
         if config.SHARED_EVAL_SEEDS:
             _set_generation_scenarios(simulator, generation, screening_runs)
         screening_seeds = _scenario_food_seeds(simulator) if config.SHARED_EVAL_SEEDS else ()
 
+        progress_label = (
+            f"Gen {generation} eval"
+            if single_shot
+            else f"Gen {generation} screening"
+        )
         _evaluate_individuals(
             population.individuals,
             workers=args.workers,
@@ -320,28 +347,29 @@ def run_training(
             food_seeds=screening_seeds,
             random_runs=screening_runs,
             observer=observer,
-            progress_label=f"Gen {generation} screening",
+            progress_label=progress_label,
         )
 
-        # Phase 2: re-evaluate top fraction with multiple boards for stable ranking.
-        ranked_prelim = population.sorted_by_fitness()
-        refine_count = max(1, int(len(ranked_prelim) * top_fraction))
-        refine_targets = ranked_prelim[:refine_count]
-        if config.SHARED_EVAL_SEEDS:
-            _set_generation_scenarios(simulator, generation + 1_000_000, refine_runs)
-        refine_seeds = _scenario_food_seeds(simulator) if config.SHARED_EVAL_SEEDS else ()
+        if not single_shot:
+            # Phase 2: re-evaluate top fraction with multiple boards for stable ranking.
+            ranked_prelim = population.sorted_by_fitness()
+            refine_count = max(1, int(len(ranked_prelim) * top_fraction))
+            refine_targets = ranked_prelim[:refine_count]
+            if config.SHARED_EVAL_SEEDS:
+                _set_generation_scenarios(simulator, generation + 1_000_000, refine_runs)
+            refine_seeds = _scenario_food_seeds(simulator) if config.SHARED_EVAL_SEEDS else ()
 
-        _evaluate_individuals(
-            refine_targets,
-            workers=args.workers,
-            simulator=simulator,
-            grid_cols=grid_cols,
-            grid_rows=grid_rows,
-            food_seeds=refine_seeds,
-            random_runs=refine_runs,
-            observer=observer,
-            progress_label=f"Gen {generation} refining",
-        )
+            _evaluate_individuals(
+                refine_targets,
+                workers=args.workers,
+                simulator=simulator,
+                grid_cols=grid_cols,
+                grid_rows=grid_rows,
+                food_seeds=refine_seeds,
+                random_runs=refine_runs,
+                observer=observer,
+                progress_label=f"Gen {generation} refining",
+            )
 
         pop_size = len(population.individuals)
         gen_win_count = 0
@@ -588,7 +616,24 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the Snake AI with a genetic algorithm.")
     parser.add_argument("--generations", type=int, default=config.GENERATIONS)
     parser.add_argument("--population", type=int, default=config.POPULATION_SIZE)
-    parser.add_argument("--eval-runs", type=int, default=config.EVAL_RUNS_PER_GENOME)
+    parser.add_argument(
+        "--eval-runs",
+        type=int,
+        default=config.EVAL_RUNS_PER_GENOME,
+        help="Screening boards averaged per snake (ignored with --single-shot).",
+    )
+    parser.add_argument(
+        "--single-shot",
+        action="store_true",
+        help="One board per snake per generation; skip the top-fraction refine pass.",
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Cap simulation steps per evaluation game (default: no cap).",
+    )
     parser.add_argument(
         "--workers",
         type=int,

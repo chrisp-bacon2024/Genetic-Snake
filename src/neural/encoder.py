@@ -1,7 +1,7 @@
 """
 Convert a live Game into a compact ray-based vector for the neural network.
 
-Layout (43 features):
+Layout (44 features):
   - 8 rays relative to heading, each [wall, food, body]:
     wall/body use inverse distance; food uses angular alignment toward food.
   - 5 food cues: inverse Manhattan distance + heading-relative offsets.
@@ -74,7 +74,6 @@ class GameStateEncoder:
         body = set(game.snake.body[1:])
         food_pos = game.food.position
         grid = game.grid
-        norm = self._grid_max_manhattan(grid)
         features: list[float] = []
 
         for dx, dy in relative_ray_deltas(game.snake.direction):
@@ -83,7 +82,7 @@ class GameStateEncoder:
             features.append(self._ray_food_alignment(head, food_pos, dx, dy))
             features.append(proximity_activation(body_steps))
 
-        features.extend(self._food_features(game.snake.direction, head, food_pos, norm))
+        features.extend(self._food_features(game.snake.direction, head, food_pos, grid))
         features.extend(self._one_hot(game.snake.direction))
         features.extend(self._one_hot(game.snake.tail_direction))
         features.extend(self._lookahead(game))
@@ -113,16 +112,12 @@ class GameStateEncoder:
             for direction in _DIRECTION_ORDER
         ]
 
-    @staticmethod
-    def _grid_max_manhattan(grid) -> float:
-        return float(max(1, grid.width - 1 + grid.height - 1))
-
     def _food_features(
         self,
         facing: Direction,
         head: Position,
         food_pos: Position,
-        norm: float,
+        grid,
     ) -> list[float]:
         dx = food_pos.x - head.x
         dy = food_pos.y - head.y
@@ -131,13 +126,19 @@ class GameStateEncoder:
         (fx, fy), (rx, ry) = heading_frame(facing)
         forward = dx * fx + dy * fy
         right = dx * rx + dy * ry
+        # Use board span (not full-grid Manhattan max) so nearby food direction cues are brighter.
+        norm = float(max(1, max(grid.width, grid.height)))
+        direction_scale = config.ENCODER_FOOD_DIRECTION_SCALE / norm
+
+        def _scaled(component: float) -> float:
+            return min(1.0, max(0.0, component) * direction_scale)
 
         return [
             self._inverse_manhattan(manhattan),
-            max(0.0, forward) / norm,
-            max(0.0, right) / norm,
-            max(0.0, -forward) / norm,
-            max(0.0, -right) / norm,
+            _scaled(forward),
+            _scaled(right),
+            _scaled(-forward),
+            _scaled(-right),
         ]
 
     def _ray_food_alignment(
@@ -156,8 +157,11 @@ class GameStateEncoder:
         ray_len = (ray_dx**2 + ray_dy**2) ** 0.5
         food_len = (fx**2 + fy**2) ** 0.5
         dot = (ray_dx * fx + ray_dy * fy) / (ray_len * food_len)
-        alignment = 0.25 + 0.75 * max(0.0, dot)
-        return alignment * self._inverse_manhattan(manhattan)
+        floor = config.ENCODER_FOOD_RAY_ALIGN_FLOOR
+        alignment = floor + (1.0 - floor) * max(0.0, dot)
+        # Match wall-style falloff (1/distance) so food at similar range is similarly bright.
+        distance = proximity_activation(manhattan)
+        return min(1.0, alignment * distance * config.ENCODER_FOOD_RAY_BOOST)
 
     def _cast_ray(
         self,

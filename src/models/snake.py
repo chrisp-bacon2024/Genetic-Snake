@@ -73,6 +73,11 @@ class Snake:
         """Keep the tail on the next move (called when food is eaten)."""
         self._grow_pending = True
 
+    def fill_vacated_tail(self, position: Position) -> None:
+        """Restore a tail cell dropped on the winning move so the board is full."""
+        if not self.occupies(position):
+            self._body.append(position)
+
     def collides_with_self(self, head: Position) -> bool:
         """Return True if head overlaps any body segment other than itself."""
         return head in list(self._body)[1:]

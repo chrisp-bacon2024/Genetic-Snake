@@ -8,6 +8,8 @@ Reproduction model (elitism + tournament + SBX + mixed-scale mutation):
   3. Fill the rest by selecting two parents via tournament from the top
      PARENT_POOL_FRACTION, breeding children with SBX crossover (default) or
      cloning a single parent (asexual mode), then mutating and clipping.
+  4. With probability CHAMPION_ASEXUAL_FRACTION, clone the #1 genome instead
+     (local search around the current champion when crossover is enabled).
 
 Fitness is assigned externally each generation by the trainer (every individual,
 elites included, is re-evaluated on the current scenario set).
@@ -75,8 +77,16 @@ class Population:
         ]
 
         low, high = config.NN_WEIGHT_CLIP_RANGE
+        champion_fraction = config.CHAMPION_ASEXUAL_FRACTION if rate > 0.0 else 0.0
+        champion = ranked[0].genome if ranked else None
         while len(next_gen) < self.size:
-            if rate > 0.0 and random.random() < rate and len(parent_pool) >= 2:
+            if (
+                champion is not None
+                and champion_fraction > 0.0
+                and random.random() < champion_fraction
+            ):
+                children = [champion.copy()]
+            elif rate > 0.0 and random.random() < rate and len(parent_pool) >= 2:
                 parent_a = self._tournament_pick(parent_pool)
                 parent_b = self._tournament_pick(parent_pool)
                 child_a, child_b = parent_a.genome.sbx_pair(parent_b.genome)

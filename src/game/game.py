@@ -121,6 +121,7 @@ class Game:
         if direction is not None:
             self._snake.set_direction(direction)
 
+        tail_before_move = self._snake.body[-1] if self._snake.body else None
         new_head = self._snake.move()
 
         if not self._grid.in_bounds(new_head):
@@ -140,6 +141,7 @@ class Game:
             # Win when all apples are eaten. Body length lags grow() by one move, so
             # score == cols*rows-1 is the reliable full-board signal (not len(body)).
             if self._state.score >= config.max_win_score(self._grid.width, self._grid.height):
+                self._fill_board_on_win(tail_before_move)
                 self._state.alive = False
                 self._state.won = True
                 self._state.death_cause = "win"
@@ -148,6 +150,7 @@ class Game:
             try:
                 self._food.respawn(self._grid, occupied, self._food_rng)
             except RuntimeError:
+                self._fill_board_on_win(tail_before_move)
                 self._state.alive = False
                 self._state.won = True
                 self._state.death_cause = "win"
@@ -163,6 +166,17 @@ class Game:
             return TickResult(died=True, starved=True, death_cause="starved")
 
         return TickResult()
+
+    def _fill_board_on_win(self, tail_before_move: Position | None) -> None:
+        """Fill every empty cell so a win shows a complete board."""
+        occupied = set(self._snake.body)
+        if tail_before_move is not None:
+            occupied.add(tail_before_move)
+        for col in range(self._grid.width):
+            for row in range(self._grid.height):
+                pos = Position(col, row)
+                if pos not in occupied:
+                    self._snake.fill_vacated_tail(pos)
 
     def _reset_entities(self) -> None:
         start = self._start_position if self._start_position is not None else self._grid.center()

@@ -88,6 +88,8 @@ CROSSOVER_RATE = 1.0
 SBX_ETA = 15.0
 # Crossover parents are chosen by tournament from this top fraction of the population.
 PARENT_POOL_FRACTION = 0.25
+# Fraction of non-elite offspring cloned from the #1 genome (mutate after copy).
+CHAMPION_ASEXUAL_FRACTION = 0.15
 # Per-gene mutation probability. Lower when eval is noisy (random 1-game boards).
 MUTATION_RATE = 0.05
 # Mixed-scale Gaussian mutation: most mutated genes get a small nudge, a fraction
@@ -96,19 +98,34 @@ MUTATION_MAGNITUDE = 0.10  # small-step std (also default for mutate())
 MUTATION_MAGNITUDE_LARGE = 0.40  # large-step std
 LARGE_MUTATION_FRACTION = 0.10  # fraction of mutated genes that take a large jump
 # Fitness (Chrispresso-inspired exponential reward):
-# fitness = steps + (2^score + score^2.1 * FITNESS_SCORE_WEIGHT)
-#          - ((0.25 * steps)^1.3 * score^1.2)
+# score>0: steps + (2^score + score^2.1 * FITNESS_SCORE_WEIGHT) - wander_penalty + shaping + space
+# score==0: no raw step credit; stronger toward-food shaping; penalty for long scoreless runs
 FITNESS_SCORE_WEIGHT = 500.0
-# Bonus per cell of Manhattan distance closed toward food each step (early learning signal).
-FITNESS_DISTANCE_SHAPING = 0.5
-# Cap so shaping alone cannot outweigh eating one apple (~500+ score term).
+# Bonus per cell of Manhattan distance closed toward food each step.
+FITNESS_DISTANCE_SHAPING = 2.0
+# Higher cap before the first apple so honing in can outrank idle survival.
 FITNESS_SHAPING_CAP = 50.0
-# Reward preserving open space (helps late-game tail routing).
+FITNESS_SHAPING_CAP_SCORELESS = 180.0
+# Lump reward for eating the first apple; speed bonus if steps_to_first_eat is known.
+FITNESS_FIRST_EAT_BONUS = 400.0
+# Extra fitness when first apple is eaten within this many steps (linear tail-off above).
+FITNESS_FIRST_EAT_BUDGET_STEPS = 80
+FITNESS_FIRST_EAT_SPEED_WEIGHT = 8.0
+# Small per-step penalty while score is still 0 (discourages endless wandering).
+FITNESS_SCORELESS_STEP_PENALTY = 0.15
+# Space bonus ramps in after the snake has started eating (avoids circling at score 0).
 FITNESS_SPACE_WEIGHT = 200.0
+FITNESS_SPACE_SCORE_RAMP = 3
+# Encoder: food should be visible at similar strength to nearby walls in the UI / MLP.
+ENCODER_FOOD_RAY_ALIGN_FLOOR = 0.45
+ENCODER_FOOD_RAY_BOOST = 1.25
+ENCODER_FOOD_DIRECTION_SCALE = 4.0
 # Huge bonus for filling the board (score == cols*rows - 1).
 FITNESS_WIN_BONUS = 1.0e12
 # Screening games averaged per genome; top fraction gets SELECT_EVAL_RUNS re-runs.
 EVAL_RUNS_PER_GENOME = 2
+# When True (or train.py --single-shot), each snake plays one board; no refine pass.
+TRAINING_SINGLE_SHOT_EVAL = False
 # Top SELECT_TOP_FRACTION of the population (by screening fitness) are re-evaluated with
 # this many boards; selection/elites use the averaged result.
 SELECT_TOP_FRACTION = 0.25
@@ -148,9 +165,24 @@ OUTPUT_DIRECTIONS = ("UP", "DOWN", "LEFT", "RIGHT")
 COLOR_BACKGROUND = (18, 18, 24)
 COLOR_PANEL = (24, 24, 32)
 COLOR_GRID_LINE = (40, 40, 52)
-COLOR_SNAKE_HEAD = (80, 220, 120)
-COLOR_SNAKE_BODY = (50, 160, 90)
-COLOR_FOOD = (240, 80, 80)
+# Snake body gradient: dark forest green at the head → lighter mint at the tail.
+COLOR_SNAKE_HEAD = (38, 118, 72)
+COLOR_SNAKE_TAIL = (96, 210, 132)
+COLOR_SNAKE_EYE = (232, 248, 236)
+COLOR_SNAKE_PUPIL = (16, 32, 24)
+# Perpendicular half-width as a fraction of cell size (head widest → tail slimmest).
+SNAKE_SEGMENT_WIDTH_HEAD_FRAC = 0.44
+SNAKE_SEGMENT_WIDTH_TAIL_FRAC = 0.16
+# Stub from segment center toward a neighbor only (leaves gap on other sides).
+SNAKE_STUB_FRAC = 0.20
+SNAKE_HEAD_NOSE_FRAC = 0.28
+SNAKE_JOINT_RADIUS_SCALE = 1.05
+COLOR_FOOD = (220, 58, 52)
+COLOR_APPLE_SHADOW = (150, 28, 32)
+COLOR_APPLE_HIGHLIGHT = (255, 170, 158)
+COLOR_APPLE_STEM = (92, 58, 28)
+COLOR_APPLE_LEAF = (56, 138, 62)
+COLOR_APPLE_OUTLINE = (120, 24, 28)
 COLOR_TEXT = (220, 220, 230)
 COLOR_TEXT_DIM = (120, 120, 140)
 COLOR_CONTROL_INACTIVE = (45, 45, 58)
@@ -158,6 +190,7 @@ COLOR_CONTROL_BORDER = (70, 70, 90)
 COLOR_CONTROL_ACTIVE = (80, 180, 255)
 COLOR_CONTROL_ACTIVE_GLOW = (120, 210, 255)
 COLOR_GAME_OVER = (255, 100, 100)
+COLOR_WIN = (72, 220, 118)
 COLOR_NEURON_INACTIVE = (50, 50, 65)
 COLOR_NEURON_ACTIVE = (100, 200, 255)
 COLOR_NEURON_INPUT_WALL = (180, 120, 80)

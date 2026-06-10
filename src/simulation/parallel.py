@@ -96,9 +96,7 @@ def evaluate_genomes_parallel(
         results: list[EvalResult] = []
         for index, job in enumerate(jobs):
             results.append(evaluate_genome_worker(job))
-            if progress_callback is not None and (
-                index == 0 or (index + 1) % 50 == 0 or index + 1 == total
-            ):
+            if progress_callback is not None:
                 progress_callback(index + 1, total)
         return results
 
@@ -112,9 +110,7 @@ def evaluate_genomes_parallel(
             index = future_to_index[future]
             results[index] = future.result()
             completed += 1
-            if progress_callback is not None and (
-                completed == 1 or completed % 50 == 0 or completed == total
-            ):
+            if progress_callback is not None:
                 progress_callback(completed, total)
 
     if any(result is None for result in results):

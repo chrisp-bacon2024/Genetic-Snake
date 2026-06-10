@@ -75,8 +75,6 @@ class HeadlessSimulator:
     def set_grid(self, cols: int, rows: int) -> None:
         """Switch evaluation to a different board size (curriculum training)."""
         self._grid = Grid(cols, rows)
-        if config.MAX_EVAL_STEPS is not None:
-            self._max_steps = cols * rows * 4
 
     @property
     def grid(self) -> Grid:
@@ -118,7 +116,9 @@ class HeadlessSimulator:
         for _ in range(run_count):
             food_seed = random.randrange(2**31)
             scenario = Scenario(food_seed=food_seed)
-            score, steps, cause, shaping, won, space_ratio = self._run(network, scenario)
+            score, steps, cause, shaping, won, space_ratio, steps_to_first_eat = self._run(
+                network, scenario
+            )
             fitnesses.append(
                 compute_fitness(
                     score,
@@ -126,6 +126,7 @@ class HeadlessSimulator:
                     shaping,
                     won=won,
                     space_ratio=space_ratio,
+                    steps_to_first_eat=steps_to_first_eat,
                     grid_cols=self._grid.width,
                     grid_rows=self._grid.height,
                 )
@@ -161,7 +162,9 @@ class HeadlessSimulator:
         best_key = (-1, 0)
         death_causes: list[DeathCause] = []
         for i, scenario in enumerate(self._scenarios):
-            score, steps, cause, shaping, won, space_ratio = self._run(network, scenario)
+            score, steps, cause, shaping, won, space_ratio, steps_to_first_eat = self._run(
+                network, scenario
+            )
             fitnesses.append(
                 compute_fitness(
                     score,
@@ -169,6 +172,7 @@ class HeadlessSimulator:
                     shaping,
                     won=won,
                     space_ratio=space_ratio,
+                    steps_to_first_eat=steps_to_first_eat,
                     grid_cols=self._grid.width,
                     grid_rows=self._grid.height,
                 )
@@ -195,8 +199,8 @@ class HeadlessSimulator:
 
     def _run(
         self, network: NeuralNetwork, scenario: Scenario
-    ) -> tuple[int, int, DeathCause, float, bool, float]:
-        """Simulate one game; return score, steps, cause, shaping, won, space_ratio."""
+    ) -> tuple[int, int, DeathCause, float, bool, float, int | None]:
+        """Simulate one game; return score, steps, cause, shaping, won, space_ratio, first_eat."""
         game = Game(
             self._grid,
             food_seed=scenario.food_seed,
@@ -206,11 +210,13 @@ class HeadlessSimulator:
         steps = 0
         shaping_bonus = 0.0
         space_ratio_sum = 0.0
+        steps_to_first_eat: int | None = None
         hidden = new_rnn_hidden()
         current = game.snake.direction
         while game.alive:
             if self._max_steps is not None and steps >= self._max_steps:
-                return game.score, steps, "timeout", shaping_bonus, False, 0.0
+                return game.score, steps, "timeout", shaping_bonus, False, 0.0, steps_to_first_eat
+            prev_score = game.score
             prev_dist = _manhattan_distance(game.snake.head(), game.food.position)
             current, hidden, _ = decide_step(
                 network, game, self._encoder, hidden, current
@@ -218,11 +224,13 @@ class HeadlessSimulator:
             space_ratio_sum += self._encoder.last_reachable_empty_ratio
             game.tick(current)
             steps += 1
+            if steps_to_first_eat is None and game.score > prev_score:
+                steps_to_first_eat = steps
             curr_dist = _manhattan_distance(game.snake.head(), game.food.position)
             shaping_bonus += config.FITNESS_DISTANCE_SHAPING * float(prev_dist - curr_dist)
         space_ratio = space_ratio_sum / max(1, steps)
         cause = game.death_cause or "wall"
-        return game.score, steps, cause, shaping_bonus, game.won, space_ratio
+        return game.score, steps, cause, shaping_bonus, game.won, space_ratio, steps_to_first_eat
 
     def _record_run(self, genome: Genome, scenario: Scenario) -> "GameRecorder":
         """Re-run a scenario with AIController so the full replay is captured."""
