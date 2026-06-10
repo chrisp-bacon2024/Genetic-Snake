@@ -22,6 +22,7 @@ import config
 from game.game import Game
 from models.direction import Direction, heading_frame, relative_ray_deltas
 from models.position import Position
+from neural.vision_rays import cast_ray, proximity_activation
 
 _DIRECTION_ORDER = (Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT)
 
@@ -57,7 +58,7 @@ class GameStateEncoder:
         head = 4
         tail = 4
         lookahead = 4
-        space = 2
+        space = 3
         return {
             "rays": (start, rays),
             "food": (start := start + rays, food),
@@ -78,9 +79,9 @@ class GameStateEncoder:
 
         for dx, dy in relative_ray_deltas(game.snake.direction):
             wall_steps, body_steps = self._cast_ray(head, dx, dy, grid, body)
-            features.append(self._inverse(wall_steps))
+            features.append(proximity_activation(wall_steps))
             features.append(self._ray_food_alignment(head, food_pos, dx, dy))
-            features.append(self._inverse(body_steps))
+            features.append(proximity_activation(body_steps))
 
         features.extend(self._food_features(game.snake.direction, head, food_pos, norm))
         features.extend(self._one_hot(game.snake.direction))
@@ -90,6 +91,7 @@ class GameStateEncoder:
         self.last_reachable_empty_ratio = reachable
         features.append(reachable)
         features.append(self._empty_fraction(game))
+        features.append(self._body_length_fraction(game))
 
         return np.asarray(features, dtype=np.float64)
 
@@ -165,26 +167,17 @@ class GameStateEncoder:
         grid,
         body: set[Position],
     ) -> tuple[int | None, int | None]:
-        body_steps: int | None = None
-
-        steps = 0
-        x, y = head.x, head.y
-        while True:
-            x += dx
-            y += dy
-            steps += 1
-            pos = Position(x, y)
-
-            if not grid.in_bounds(pos):
-                return steps, body_steps
-
-            if body_steps is None and pos in body:
-                body_steps = steps
+        return cast_ray(head, dx, dy, grid, body)
 
     def _empty_fraction(self, game: Game) -> float:
         total = game.grid.width * game.grid.height
         occupied = len(game.snake.body)
         return max(0.0, (total - occupied) / float(total))
+
+    @staticmethod
+    def _body_length_fraction(game: Game) -> float:
+        total = game.grid.width * game.grid.height
+        return len(game.snake.body) / float(max(1, total))
 
     def _reachable_empty_ratio(self, game: Game) -> float:
         grid = game.grid
@@ -226,11 +219,6 @@ class GameStateEncoder:
 
     def _one_hot(self, direction: Direction) -> list[float]:
         return [1.0 if direction is d else 0.0 for d in _DIRECTION_ORDER]
-
-    def _inverse(self, steps: int | None) -> float:
-        if steps is None or steps <= 0:
-            return 0.0
-        return 1.0 / float(steps)
 
     @staticmethod
     def _inverse_manhattan(manhattan: int) -> float:

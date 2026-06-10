@@ -110,7 +110,10 @@ class NeuralNetwork:
 
     @classmethod
     def _mlp_genome_length(cls) -> int:
-        sizes = cls.layer_sizes()
+        return cls.genome_length_for_sizes(cls.layer_sizes())
+
+    @staticmethod
+    def genome_length_for_sizes(sizes: tuple[int, ...]) -> int:
         total = 0
         for index in range(len(sizes) - 1):
             in_dim, out_dim = sizes[index], sizes[index + 1]
@@ -126,17 +129,25 @@ class NeuralNetwork:
         return 3 * gate + hidden * output_size + output_size
 
     @classmethod
-    def from_genome(cls, genome: Genome) -> "NeuralNetwork":
-        expected = cls.genome_length()
+    def from_genome(
+        cls,
+        genome: Genome,
+        *,
+        layer_sizes: tuple[int, ...] | None = None,
+    ) -> "NeuralNetwork":
+        sizes = layer_sizes or cls.layer_sizes()
+        expected = cls.genome_length_for_sizes(sizes)
         if genome.genes.size != expected:
-            raise ValueError(f"Expected genome length {expected}, got {genome.genes.size}.")
+            raise ValueError(
+                f"Expected genome length {expected} for architecture {sizes}, "
+                f"got {genome.genes.size}."
+            )
         if cls.is_recurrent():
             return cls._from_genome_gru(genome)
-        return cls._from_genome_mlp(genome)
+        return cls._from_genome_mlp(genome, sizes)
 
     @classmethod
-    def _from_genome_mlp(cls, genome: Genome) -> "NeuralNetwork":
-        sizes = cls.layer_sizes()
+    def _from_genome_mlp(cls, genome: Genome, sizes: tuple[int, ...]) -> "NeuralNetwork":
         genes = genome.genes
         idx = 0
         layers: list[_MLPLayer] = []

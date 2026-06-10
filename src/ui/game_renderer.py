@@ -1,9 +1,13 @@
 """Draws the Snake playfield: grid lines, snake, food, score, and game-over overlay."""
 
+import numpy as np
 import pygame
 
 import config
 from game.game import Game
+from neural.encoder import GameStateEncoder
+from neural.vision_rays import vision_rays_for_game
+from ui.input_feature_color import input_feature_color
 
 
 class GameRenderer:
@@ -42,10 +46,12 @@ class GameRenderer:
     def board_height(self) -> int:
         return self.rows * self._cell_size
 
-    def draw(self) -> None:
+    def draw(self, *, inputs: np.ndarray | None = None) -> None:
         """Redraw the full game area for the current frame."""
         self._surface.fill(config.COLOR_BACKGROUND)
         self._draw_grid()
+        if config.VISION_RAYS_ENABLED:
+            self._draw_vision_rays(inputs)
         self._draw_food()
         self._draw_snake()
         self._draw_hud()
@@ -75,6 +81,44 @@ class GameRenderer:
                 (self._offset_x, y),
                 (self._offset_x + self.board_width, y),
             )
+
+    def _cell_center(self, col: int, row: int) -> tuple[int, int]:
+        return (
+            self._offset_x + col * self._cell_size + self._cell_size // 2,
+            self._offset_y + row * self._cell_size + self._cell_size // 2,
+        )
+
+    def _draw_vision_rays(self, inputs: np.ndarray | None) -> None:
+        """Draw heading-relative rays from the head toward walls, body, and food."""
+        head = self._game.snake.head()
+        head_xy = self._cell_center(head.x, head.y)
+        food = self._game.food.position
+        line_width = max(1, self._cell_size // 22)
+        end_radius = max(1, self._cell_size // 16)
+
+        if inputs is None:
+            inputs = GameStateEncoder().encode(self._game)
+        ray_count = config.ENCODER_RAY_COUNT
+
+        for ray_index, ray in enumerate(vision_rays_for_game(self._game)):
+            end = ray.end_cell(head)
+            end_xy = self._cell_center(end.x, end.y)
+            value = ray.obstacle_proximity()
+            feature_row = 2 if ray.hits_body_first() else 0
+            color = input_feature_color(feature_row, value)
+            if end_xy != head_xy:
+                pygame.draw.line(self._surface, color, head_xy, end_xy, line_width)
+                pygame.draw.circle(self._surface, color, end_xy, end_radius)
+
+        if food != head:
+            food_xy = self._cell_center(food.x, food.y)
+            # Match the brightest food-alignment neuron in the ray grid (middle row).
+            best_food_align = max(
+                float(inputs[i * 3 + 1]) for i in range(ray_count)
+            )
+            food_color = input_feature_color(1, best_food_align)
+            pygame.draw.line(self._surface, food_color, head_xy, food_xy, line_width)
+            pygame.draw.circle(self._surface, food_color, food_xy, end_radius)
 
     def _draw_snake(self) -> None:
         body = self._game.snake.body

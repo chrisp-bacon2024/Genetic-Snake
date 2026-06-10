@@ -16,6 +16,7 @@ import config
 from controllers.ai_controller import NetworkSnapshot
 from models.direction import Direction
 from neural.encoder import GameStateEncoder
+from ui.input_feature_color import feature_row_color, input_feature_color, lerp_color
 
 
 @dataclass(frozen=True)
@@ -378,7 +379,7 @@ class NetworkVisualizer:
             for row in range(3):
                 index = ray * 3 + row
                 value = float(inputs[index]) if index < len(inputs) else 0.0
-                color = self._input_color(row, value)
+                color = input_feature_color(row, value)
                 node_y = first_row_center_y + row * metrics.input_row_height
                 pygame.draw.circle(self._surface, color, (x, node_y), metrics.input_radius)
 
@@ -420,7 +421,7 @@ class NetworkVisualizer:
         for i in range(count):
             index = start_index + i
             value = float(inputs[index]) if index < len(inputs) else 0.0
-            color = self._lerp_color(config.COLOR_NEURON_INACTIVE, base_color, value)
+            color = feature_row_color(base_color, value)
             x = start_x + i * pitch
             pygame.draw.circle(self._surface, color, (x, center_y), radius)
 
@@ -524,14 +525,14 @@ class NetworkVisualizer:
             label_color = config.COLOR_BACKGROUND
         else:
             fill_color = self._activation_color(activation)
-            border_color = self._lerp_color(
+            border_color = lerp_color(
                 config.COLOR_CONTROL_BORDER,
                 config.COLOR_CONTROL_ACTIVE,
                 activation,
             )
             pygame.draw.rect(self._surface, fill_color, rect, border_radius=corner_radius)
             pygame.draw.rect(self._surface, border_color, rect, width=2, border_radius=corner_radius)
-            label_color = self._lerp_color(config.COLOR_TEXT_DIM, config.COLOR_TEXT, activation)
+            label_color = lerp_color(config.COLOR_TEXT_DIM, config.COLOR_TEXT, activation)
 
         if is_chosen:
             pygame.draw.rect(self._surface, fill_color, rect, border_radius=corner_radius)
@@ -548,27 +549,6 @@ class NetworkVisualizer:
             Direction.RIGHT: ">",
         }[direction]
 
-    @staticmethod
-    def _input_color(feature_row: int, value: float) -> tuple[int, int, int]:
-        base_colors = (
-            config.COLOR_NEURON_INPUT_WALL,
-            config.COLOR_NEURON_INPUT_FOOD,
-            config.COLOR_NEURON_INPUT_BODY,
-        )
-        low = config.COLOR_NEURON_INACTIVE
-        high = base_colors[feature_row]
-        t = min(max(value, 0.0), 1.0)
-        return tuple(int(low[i] + (high[i] - low[i]) * t) for i in range(3))
-
     def _activation_color(self, value: float) -> tuple[int, int, int]:
         normalized = min(max(value, 0.0), 1.0)
-        return self._lerp_color(config.COLOR_NEURON_INACTIVE, config.COLOR_NEURON_ACTIVE, normalized)
-
-    @staticmethod
-    def _lerp_color(
-        low: tuple[int, int, int],
-        high: tuple[int, int, int],
-        t: float,
-    ) -> tuple[int, int, int]:
-        t = min(max(t, 0.0), 1.0)
-        return tuple(int(low[i] + (high[i] - low[i]) * t) for i in range(3))
+        return lerp_color(config.COLOR_NEURON_INACTIVE, config.COLOR_NEURON_ACTIVE, normalized)

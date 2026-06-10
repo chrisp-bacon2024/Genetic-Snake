@@ -46,18 +46,20 @@ MAX_GRID_ROWS = GRID_ROWS
 
 # Ray encoder: 8 heading-relative rays x [wall, food, body].
 ENCODER_RAY_COUNT = 8
+# Draw encoder vision rays on the playfield (head → wall/body/food).
+VISION_RAYS_ENABLED = True
 
 
 def nn_input_size() -> int:
-    """Ray vision + food + direction + lookahead + space metrics."""
-    return ENCODER_RAY_COUNT * 3 + 5 + 4 + 4 + 4 + 2
+    """Ray vision + food + direction + lookahead + space/body metrics."""
+    return ENCODER_RAY_COUNT * 3 + 5 + 4 + 4 + 4 + 3
 
 
 WINDOW_WIDTH = PANEL_WIDTH + GRID_COLS * CELL_SIZE
 WINDOW_HEIGHT = GRID_ROWS * CELL_SIZE
 
 # Neural network topology
-# Inputs: 8 rays (24) + food (5) + head/tail dir (8) + lookahead (4) + space (2) = 43.
+# Inputs: 8 rays (24) + food (5) + head/tail dir (8) + lookahead (4) + space/body (3) = 44.
 # Changing encoder or NN_ARCH requires retraining; saved genomes/replays are not compatible.
 NN_INPUT_SIZE = nn_input_size()
 # Network architecture: feedforward MLP (rays -> hidden -> 4) or GRU memory.
@@ -66,7 +68,7 @@ NN_RNN_HIDDEN = 48
 # Mask illegal one-step moves (lookahead) before choosing a direction.
 MASK_UNSAFE_MOVES = True
 # Single hidden layer — rays + fitness-aligned space cues replace the full board.
-NN_HIDDEN_SIZES = (32,)
+NN_HIDDEN_SIZES = (64,)
 NN_OUTPUT_SIZE = 4
 NN_WEIGHT_INIT_RANGE = (-1.0, 1.0)
 # Genes are clamped to this range after crossover/mutation so weights cannot explode.

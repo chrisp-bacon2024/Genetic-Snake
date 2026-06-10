@@ -114,8 +114,9 @@ class SnakeApp:
             )
 
     def _render(self) -> None:
-        self._control_panel.draw(self._controller.last_snapshot)
-        self._renderer.draw()
+        snapshot = self._controller.visual_snapshot()
+        self._control_panel.draw(snapshot)
+        self._renderer.draw(inputs=snapshot.inputs)
 
         self._screen.blit(self._panel_surface, (0, 0))
         self._screen.blit(self._game_surface, (config.PANEL_WIDTH, 0))

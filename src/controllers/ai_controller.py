@@ -50,8 +50,29 @@ class AIController(Controller):
 
     @property
     def last_snapshot(self) -> NetworkSnapshot:
-        """Most recent forward pass (for rendering and replay frames)."""
+        """Most recent decision forward pass (for replay recording)."""
         return self._last_snapshot
+
+    def visual_snapshot(self) -> NetworkSnapshot:
+        """
+        Encode and forward-pass the current board for UI rendering.
+
+        After a tick the snake has moved but last_snapshot still reflects the
+        pre-tick state used for the decision; the panel and rays should match
+        the visible board instead.
+        """
+        if not self._game.alive:
+            return self._last_snapshot
+
+        inputs = self._encoder.encode(self._game)
+        result, _ = self._network.forward(inputs, self._rnn_hidden)
+        return NetworkSnapshot(
+            inputs=result.inputs,
+            hidden_layers=result.hidden_layers,
+            outputs=result.outputs,
+            chosen_direction=self._last_snapshot.chosen_direction,
+            rnn_hidden=result.rnn_hidden,
+        )
 
     @property
     def network(self) -> NeuralNetwork:

@@ -48,7 +48,9 @@ class _ReplaySession:
     tick_accumulator: float = 0.0
 
 
-def _load_genome_file(path: Path) -> tuple[int, int, Genome, int, int, int]:
+def _load_genome_file(
+    path: Path,
+) -> tuple[int, int, Genome, int, int, int, tuple[int, ...] | None]:
     data = np.load(path)
     genome = Genome(np.asarray(data["genes"], dtype=np.float64))
     generation = int(data["generation"])
@@ -56,7 +58,16 @@ def _load_genome_file(path: Path) -> tuple[int, int, Genome, int, int, int]:
     food_seed = int(data["food_seed"])
     grid_cols = int(data["grid_cols"]) if "grid_cols" in data else config.GRID_COLS
     grid_rows = int(data["grid_rows"]) if "grid_rows" in data else config.GRID_ROWS
-    return generation, score, genome, food_seed, grid_cols, grid_rows
+    architecture: tuple[int, ...] | None = None
+    if "architecture" in data:
+        architecture = tuple(int(value) for value in data["architecture"])
+    return generation, score, genome, food_seed, grid_cols, grid_rows, architecture
+
+
+def _network_from_replay(genome: Genome, architecture: tuple[int, ...] | None) -> NeuralNetwork:
+    if architecture is not None:
+        return NeuralNetwork.from_genome(genome, layer_sizes=architecture)
+    return NeuralNetwork.from_genome(genome)
 
 
 def _gen_path(replays_dir: Path, generation: int) -> Path | None:
@@ -348,10 +359,12 @@ class ReplayViewer:
         panel_surface: pygame.Surface,
         game_surface: pygame.Surface,
     ) -> _ReplaySession:
-        generation, score, genome, food_seed, grid_cols, grid_rows = _load_genome_file(path)
+        generation, score, genome, food_seed, grid_cols, grid_rows, architecture = _load_genome_file(
+            path
+        )
         grid = Grid(grid_cols, grid_rows)
         game = Game(grid, food_seed=food_seed)
-        controller = AIController(game, NeuralNetwork.from_genome(genome))
+        controller = AIController(game, _network_from_replay(genome, architecture))
         cell_size, offset_x, offset_y = board_layout(
             grid_cols,
             grid_rows,
@@ -400,7 +413,7 @@ class ReplayViewer:
         dead_linger = 0.0
         running = True
         nav_hold = _NavHoldTracker()
-        session.control_panel.draw(session.controller.last_snapshot, replay_mode=True)
+        session.control_panel.draw(session.controller.visual_snapshot(), replay_mode=True)
         gen_input.layout_fixed_footer()
 
         while running and navigate.advance == 0 and navigate.jump_to is None:
@@ -445,13 +458,12 @@ class ReplayViewer:
                 if dead_linger >= 1.5:
                     navigate = _Navigate(advance=1)
 
-            session.control_panel.draw(
-                session.controller.last_snapshot, replay_mode=True
-            )
+            snapshot = session.controller.visual_snapshot()
+            session.control_panel.draw(snapshot, replay_mode=True)
             gen_input.layout_fixed_footer()
             gen_input.draw(panel_surface)
             _draw_replay_nav_bar(panel_surface)
-            session.renderer.draw()
+            session.renderer.draw(inputs=snapshot.inputs)
             if waiting_for is not None:
                 _draw_status_overlay(
                     game_surface,
@@ -597,13 +609,12 @@ class LiveReplayViewer:
                 )
                 continue
 
-            session.control_panel.draw(
-                session.controller.last_snapshot, replay_mode=True
-            )
+            snapshot = session.controller.visual_snapshot()
+            session.control_panel.draw(snapshot, replay_mode=True)
             gen_input.layout_fixed_footer()
             gen_input.draw(panel_surface)
             _draw_replay_nav_bar(panel_surface)
-            session.renderer.draw()
+            session.renderer.draw(inputs=snapshot.inputs)
             if not session.game.alive:
                 if training_active and session.generation + 1 > self._latest_available:
                     subtitle = _waiting_message(session.generation + 1, training_active=True)
@@ -645,10 +656,12 @@ class LiveReplayViewer:
         panel_surface: pygame.Surface,
         game_surface: pygame.Surface,
     ) -> _ReplaySession:
-        generation, score, genome, food_seed, grid_cols, grid_rows = _load_genome_file(path)
+        generation, score, genome, food_seed, grid_cols, grid_rows, architecture = _load_genome_file(
+            path
+        )
         grid = Grid(grid_cols, grid_rows)
         game = Game(grid, food_seed=food_seed)
-        controller = AIController(game, NeuralNetwork.from_genome(genome))
+        controller = AIController(game, _network_from_replay(genome, architecture))
         cell_size, offset_x, offset_y = board_layout(
             grid_cols,
             grid_rows,
