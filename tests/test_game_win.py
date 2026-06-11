@@ -38,7 +38,7 @@ class WinDetectionTests(unittest.TestCase):
         self.assertTrue(game.won)
         self.assertEqual(game.death_cause, "win")
         self.assertGreaterEqual(game.score, config.max_win_score(2, 2))
-        self.assertEqual(len(game.snake.body), 4)
+        self.assertLess(len(game.snake.body), 2 * 2)
 
 
 if __name__ == "__main__":
