@@ -16,6 +16,11 @@ from replay.recorder import GameRecorder
 
 from .control_panel import ControlPanel
 from .game_renderer import GameRenderer
+from .score_jump_dialog import (
+    ScoreJumpDialog,
+    _DoubleClickDetector,
+    try_open_score_dialog_on_double_click,
+)
 
 
 class SnakeApp:
@@ -51,6 +56,9 @@ class SnakeApp:
         self._tick_accumulator = 0.0
         self._tick_interval = 1.0 / config.TICKS_PER_SECOND
         self._running = True
+        self._score_dialog = ScoreJumpDialog(game_surface.get_width(), game_surface.get_height())
+        self._score_dialog.set_panel_origin(config.PANEL_WIDTH)
+        self._score_double_click = _DoubleClickDetector()
 
         self._begin_recording()
         self._controller.get_direction()
@@ -69,20 +77,53 @@ class SnakeApp:
             delta = self._clock.tick(config.RENDER_FPS) / 1000.0
             events = pygame.event.get()
             self._handle_events(events)
-            self._controller.update(events)
+            if not self._score_dialog.active:
+                self._controller.update(events)
             self._update_simulation(delta)
             self._render()
             pygame.display.flip()
 
         pygame.quit()
 
+    def _max_win_score(self) -> int:
+        return config.max_win_score(self._game.grid.width, self._game.grid.height)
+
+    def _apply_score_jump(self, target_score: int) -> None:
+        self._controller.seek_to_score(target_score)
+        self._begin_recording()
+        if self._game.alive:
+            self._controller.get_direction()
+
     def _handle_events(self, events: list) -> None:
+        now = pygame.time.get_ticks() / 1000.0
+        max_score = self._max_win_score()
+
         for event in events:
             if event.type == pygame.QUIT:
                 self._running = False
-            elif event.type == pygame.KEYDOWN:
+                return
+
+            if self._score_dialog.active:
+                result = self._score_dialog.handle_event(event, max_score=max_score)
+                if result is not False:
+                    if isinstance(result, int):
+                        self._apply_score_jump(result)
+                    continue
+
+            if try_open_score_dialog_on_double_click(
+                event,
+                score_rect=self._renderer.score_rect,
+                panel_width=config.PANEL_WIDTH,
+                dialog=self._score_dialog,
+                detector=self._score_double_click,
+                now=now,
+            ):
+                continue
+
+            if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self._running = False
+                    return
                 elif event.key == pygame.K_r:
                     self._restart()
 
@@ -117,6 +158,7 @@ class SnakeApp:
         snapshot = self._controller.visual_snapshot()
         self._control_panel.draw(snapshot)
         self._renderer.draw(inputs=snapshot.inputs)
+        self._score_dialog.draw(self._game_surface, max_score=self._max_win_score())
 
         self._screen.blit(self._panel_surface, (0, 0))
         self._screen.blit(self._game_surface, (config.PANEL_WIDTH, 0))

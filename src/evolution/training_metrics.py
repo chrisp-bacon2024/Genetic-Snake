@@ -34,11 +34,13 @@ class GenerationMetrics:
     avg_fitness: float
     best_score: int
     max_score: int
-    avg_max10: float
+    avg_score: float
     best_ever_score: int
     death_cause: str
     win_count: int = 0
     win_needed: int = 0
+    population_scores: tuple[int, ...] = ()
+    population_death_causes: tuple[str, ...] = ()
 
     @property
     def grid_label(self) -> str:
@@ -54,6 +56,6 @@ def format_generation_line(metrics: GenerationMetrics) -> str:
         f"best_fit {metrics.best_fitness:10.2f} | "
         f"avg_fit {metrics.avg_fitness:9.2f} | "
         f"best_score {metrics.best_score:3d} | max_score {metrics.max_score:3d} | "
-        f"avg_max10 {metrics.avg_max10:4.1f} | "
+        f"avg_score {metrics.avg_score:4.1f} | "
         f"best_ever {metrics.best_ever_score:3d}{wins} | died {metrics.death_cause}"
     )

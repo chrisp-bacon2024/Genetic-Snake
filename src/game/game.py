@@ -168,15 +168,9 @@ class Game:
         return TickResult()
 
     def _fill_board_on_win(self, tail_before_move: Position | None) -> None:
-        """Fill every empty cell so a win shows a complete board."""
-        occupied = set(self._snake.body)
+        """Restore the tail cell dropped on the winning eat (grow applies next move)."""
         if tail_before_move is not None:
-            occupied.add(tail_before_move)
-        for col in range(self._grid.width):
-            for row in range(self._grid.height):
-                pos = Position(col, row)
-                if pos not in occupied:
-                    self._snake.fill_vacated_tail(pos)
+            self._snake.fill_vacated_tail(tail_before_move)
 
     def _reset_entities(self) -> None:
         start = self._start_position if self._start_position is not None else self._grid.center()

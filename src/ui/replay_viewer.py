@@ -32,6 +32,11 @@ from neural.network import NeuralNetwork
 
 from .control_panel import REPLAY_FOOTER_HEIGHT, REPLAY_GEN_INPUT_GAP, ControlPanel
 from .game_renderer import GameRenderer, board_layout
+from .score_jump_dialog import (
+    ScoreJumpDialog,
+    _DoubleClickDetector,
+    try_open_score_dialog_on_double_click,
+)
 
 
 @dataclass
@@ -297,6 +302,41 @@ class _GenerationJumpInput:
         return value
 
 
+def _make_score_jump_ui(game_surface: pygame.Surface) -> tuple[ScoreJumpDialog, _DoubleClickDetector]:
+    dialog = ScoreJumpDialog(game_surface.get_width(), game_surface.get_height())
+    dialog.set_panel_origin(config.PANEL_WIDTH)
+    return dialog, _DoubleClickDetector()
+
+
+def _handle_score_jump_event(
+    event: pygame.event.Event,
+    session: _ReplaySession,
+    dialog: ScoreJumpDialog,
+    detector: _DoubleClickDetector,
+    now: float,
+) -> bool:
+    max_score = config.max_win_score(session.grid_cols, session.grid_rows)
+    if dialog.active:
+        result = dialog.handle_event(event, max_score=max_score)
+        if result is not False:
+            if isinstance(result, int):
+                session.controller.seek_to_score(result)
+                session.steps = 0
+                if session.game.alive:
+                    session.controller.get_direction()
+            return True
+        return False
+
+    return try_open_score_dialog_on_double_click(
+        event,
+        score_rect=session.renderer.score_rect,
+        panel_width=config.PANEL_WIDTH,
+        dialog=dialog,
+        detector=detector,
+        now=now,
+    )
+
+
 def _generation_from_path(path: Path) -> int:
     return int(path.stem.split("_", 1)[1])
 
@@ -324,6 +364,7 @@ class ReplayViewer:
     def run(self) -> None:
         screen, panel_surface, game_surface, clock = _init_display()
         gen_input = _GenerationJumpInput()
+        score_dialog, score_detector = _make_score_jump_ui(game_surface)
         running = True
         while running and self._files:
             session = self._start_session(
@@ -338,6 +379,8 @@ class ReplayViewer:
                 clock,
                 session,
                 gen_input,
+                score_dialog,
+                score_detector,
                 auto_advance_on_death=True,
             )
             if result is None:
@@ -398,6 +441,8 @@ class ReplayViewer:
         clock: pygame.time.Clock,
         session: _ReplaySession,
         gen_input: _GenerationJumpInput,
+        score_dialog: ScoreJumpDialog,
+        score_detector: _DoubleClickDetector,
         *,
         auto_advance_on_death: bool,
         waiting_for: int | None = None,
@@ -418,9 +463,15 @@ class ReplayViewer:
 
         while running and navigate.advance == 0 and navigate.jump_to is None:
             delta = clock.tick(config.RENDER_FPS) / 1000.0
+            now = pygame.time.get_ticks() / 1000.0
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return None
+
+                if _handle_score_jump_event(
+                    event, session, score_dialog, score_detector, now
+                ):
+                    continue
 
                 consumed, jump_to = gen_input.handle_event(event)
                 if jump_to is not None:
@@ -433,13 +484,18 @@ class ReplayViewer:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         return None
-                    if gen_input.active:
+                    if gen_input.active or score_dialog.active:
                         continue
                     nav_dir = _nav_from_key_event(event.key)
                     if nav_dir is not None and not _is_key_repeat(event):
                         navigate = _Navigate(advance=nav_hold.on_key_down(nav_dir))
 
-            if navigate.advance == 0 and navigate.jump_to is None and not gen_input.active:
+            if (
+                navigate.advance == 0
+                and navigate.jump_to is None
+                and not gen_input.active
+                and not score_dialog.active
+            ):
                 offset = nav_hold.update(delta)
                 if offset != 0:
                     navigate = _Navigate(advance=offset)
@@ -464,6 +520,10 @@ class ReplayViewer:
             gen_input.draw(panel_surface)
             _draw_replay_nav_bar(panel_surface)
             session.renderer.draw(inputs=snapshot.inputs)
+            score_dialog.draw(
+                game_surface,
+                max_score=config.max_win_score(session.grid_cols, session.grid_rows),
+            )
             if waiting_for is not None:
                 _draw_status_overlay(
                     game_surface,
@@ -510,6 +570,7 @@ class LiveReplayViewer:
         running = True
         nav_hold = _NavHoldTracker()
         gen_input = _GenerationJumpInput()
+        score_dialog, score_detector = _make_score_jump_ui(game_surface)
 
         while running:
             self._refresh_latest_available()
@@ -532,11 +593,17 @@ class LiveReplayViewer:
             delta = clock.tick(config.RENDER_FPS) / 1000.0
             advance = 0
             jump_to: int | None = None
+            now = pygame.time.get_ticks() / 1000.0
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
                     break
+
+                if session is not None and _handle_score_jump_event(
+                    event, session, score_dialog, score_detector, now
+                ):
+                    continue
 
                 consumed, jump_generation = gen_input.handle_event(event)
                 if jump_generation is not None:
@@ -551,13 +618,13 @@ class LiveReplayViewer:
                     if event.key == pygame.K_ESCAPE:
                         running = False
                         break
-                    if gen_input.active:
+                    if gen_input.active or score_dialog.active:
                         continue
                     nav_dir = _nav_from_key_event(event.key)
                     if nav_dir is not None and not _is_key_repeat(event):
                         advance = nav_hold.on_key_down(nav_dir)
 
-            if jump_to is None and advance == 0 and not gen_input.active:
+            if jump_to is None and advance == 0 and not gen_input.active and not score_dialog.active:
                 advance = nav_hold.update(delta)
 
             if not running:
@@ -615,6 +682,10 @@ class LiveReplayViewer:
             gen_input.draw(panel_surface)
             _draw_replay_nav_bar(panel_surface)
             session.renderer.draw(inputs=snapshot.inputs)
+            score_dialog.draw(
+                game_surface,
+                max_score=config.max_win_score(session.grid_cols, session.grid_rows),
+            )
             if not session.game.alive:
                 if training_active and session.generation + 1 > self._latest_available:
                     subtitle = _waiting_message(session.generation + 1, training_active=True)

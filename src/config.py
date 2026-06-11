@@ -147,8 +147,8 @@ CURRICULUM_STAGES = (
     (20, 20),
 )
 # Fraction of the population that must win (death_cause == "win") among the top
-# SELECT_TOP_FRACTION parent pool to advance a stage or stop on the final board.
-CURRICULUM_ADVANCE_WIN_FRACTION = 0.25
+# Fraction of population that must win to advance a stage or stop on the final board.
+CURRICULUM_ADVANCE_WIN_FRACTION = 0.10
 # Minimum generations on a stage before win-rate advancement (avoids lucky early jumps).
 CURRICULUM_MIN_GENS_PER_STAGE = 5
 

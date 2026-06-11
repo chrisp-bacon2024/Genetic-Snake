@@ -34,6 +34,7 @@ class GameRenderer:
         self._offset_y = offset_y
         self._score_font = pygame.font.SysFont("consolas", 22, bold=True)
         self._overlay_font = pygame.font.SysFont("consolas", 28, bold=True)
+        self._score_rect = pygame.Rect(0, 0, 0, 0)
 
     @property
     def cols(self) -> int:
@@ -51,6 +52,11 @@ class GameRenderer:
     def board_height(self) -> int:
         return self.rows * self._cell_size
 
+    @property
+    def score_rect(self) -> pygame.Rect:
+        """Screen-space hit target for the score label (updated each draw)."""
+        return self._score_rect.copy()
+
     def draw(self, *, inputs: np.ndarray | None = None) -> None:
         """Redraw the full game area for the current frame."""
         self._surface.fill(config.COLOR_BACKGROUND)
@@ -61,7 +67,7 @@ class GameRenderer:
             self._draw_food()
         self._draw_snake()
         if self._game.won:
-            self._draw_win_fill()
+            self._draw_win_gaps()
         self._draw_hud()
 
         if not self._game.alive:
@@ -446,59 +452,52 @@ class GameRenderer:
             (int(right[0]), int(right[1])),
         ]
 
-    def _draw_win_fill(self) -> None:
-        """Fill any remaining empty cells with tail styling (fallback after a win)."""
+    def _draw_win_gaps(self) -> None:
+        """Mark empty cells after a win with a faint connector, not a full body segment."""
         body = self._game.snake.body
         occupied = set(body)
-        length = len(body)
-        if length == 0:
+        if not body:
             return
-        tail_index = length - 1
-        tail_color = self._snake_segment_color(tail_index, length)
+        tail_color = self._snake_segment_color(len(body) - 1, len(body))
         for row in range(self.rows):
             for col in range(self.cols):
                 pos = Position(col, row)
                 if pos in occupied:
                     continue
-                neighbor_dirs = self._win_fill_neighbor_dirs(pos, occupied)
-                if not neighbor_dirs:
-                    continue
-                self._draw_win_fill_pad(
-                    col,
-                    row,
-                    tail_color,
-                    tail_index,
-                    length,
-                    neighbor_dirs,
-                )
+                for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+                    if Position(pos.x + dx, pos.y + dy) not in occupied:
+                        continue
+                    self._draw_win_gap_hint(col, row, (-dx, -dy), tail_color)
+                    break
 
-    @staticmethod
-    def _win_fill_neighbor_dirs(
-        pos: Position,
-        occupied: set[Position],
-    ) -> list[tuple[int, int]]:
-        dirs: list[tuple[int, int]] = []
-        for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
-            if Position(pos.x + dx, pos.y + dy) in occupied:
-                dirs.append((dx, dy))
-        return dirs
-
-    def _draw_win_fill_pad(
+    def _draw_win_gap_hint(
         self,
         col: int,
         row: int,
+        toward_body: tuple[int, int],
         color: tuple[int, int, int],
-        index: int,
-        length: int,
-        neighbor_dirs: list[tuple[int, int]],
     ) -> None:
+        """Short faded stub from the gap toward the body — reads as an open tail end."""
         cx, cy = self._cell_center(col, row)
-        half_w = self._cell_size * self._segment_width_frac(index, length)
-        stub_len = self._cell_size * config.SNAKE_STUB_FRAC
-        core_r = max(2, int(half_w * 0.78))
-        for direction in neighbor_dirs:
-            self._draw_segment_stub(cx, cy, direction, half_w, stub_len, color)
-        pygame.draw.circle(self._surface, color, (int(cx), int(cy)), core_r)
+        dx, dy = toward_body
+        span = math.hypot(dx, dy)
+        if span == 0:
+            return
+        ux, uy = dx / span, dy / span
+        length = self._cell_size * config.SNAKE_STUB_FRAC * 0.55
+        half_w = self._cell_size * config.SNAKE_SEGMENT_WIDTH_TAIL_FRAC * 0.85
+        faded = tuple(int(c * 0.55 + config.COLOR_BACKGROUND[i] * 0.45) for i, c in enumerate(color))
+        tip_x = cx + ux * length
+        tip_y = cy + uy * length
+        px, py = -uy, ux
+        points = [
+            (int(cx + px * half_w), int(cy + py * half_w)),
+            (int(tip_x + px * half_w), int(tip_y + py * half_w)),
+            (int(tip_x), int(tip_y)),
+            (int(tip_x - px * half_w), int(tip_y - py * half_w)),
+            (int(cx - px * half_w), int(cy - py * half_w)),
+        ]
+        pygame.draw.polygon(self._surface, faded, points)
 
     def _draw_food(self) -> None:
         food = self._game.food.position
@@ -589,6 +588,7 @@ class GameRenderer:
                 self._offset_y + 8,
             )
         self._surface.blit(score_text, text_rect)
+        self._score_rect = text_rect.copy()
 
     def _draw_game_over(self) -> None:
         overlay = pygame.Surface((self.board_width, self.board_height), pygame.SRCALPHA)
