@@ -60,11 +60,13 @@ def enrich_metrics_fitness(metrics: GenerationMetrics) -> GenerationMetrics:
         avg_fitness=avg_fit if _fitness_missing(metrics.avg_fitness) else metrics.avg_fitness,
         best_score=metrics.best_score,
         max_score=metrics.max_score,
-        avg_max10=metrics.avg_max10,
+        avg_score=metrics.avg_score,
         best_ever_score=metrics.best_ever_score,
         death_cause=metrics.death_cause,
         win_count=metrics.win_count,
         win_needed=metrics.win_needed,
+        population_scores=metrics.population_scores,
+        population_death_causes=metrics.population_death_causes,
     )
 
 
@@ -77,15 +79,21 @@ def metrics_to_dict(metrics: GenerationMetrics) -> dict:
         "avg_fitness": _json_float(metrics.avg_fitness),
         "best_score": metrics.best_score,
         "max_score": metrics.max_score,
-        "avg_max10": metrics.avg_max10,
+        "avg_score": metrics.avg_score,
         "best_ever_score": metrics.best_ever_score,
         "death_cause": metrics.death_cause,
         "win_count": metrics.win_count,
         "win_needed": metrics.win_needed,
+        "population_scores": list(metrics.population_scores),
+        "population_death_causes": list(metrics.population_death_causes),
     }
 
 
 def metrics_from_dict(data: dict) -> GenerationMetrics:
+    raw_scores = data.get("population_scores", [])
+    population_scores = tuple(int(s) for s in raw_scores) if raw_scores else ()
+    raw_causes = data.get("population_death_causes", [])
+    population_death_causes = tuple(str(c) for c in raw_causes) if raw_causes else ()
     return GenerationMetrics(
         generation=int(data["generation"]),
         grid_cols=int(data["grid_cols"]),
@@ -94,11 +102,13 @@ def metrics_from_dict(data: dict) -> GenerationMetrics:
         avg_fitness=_parse_float(data.get("avg_fitness")),
         best_score=int(data["best_score"]),
         max_score=int(data["max_score"]),
-        avg_max10=float(data["avg_max10"]),
+        avg_score=float(data.get("avg_score", data.get("avg_max10", 0.0))),
         best_ever_score=int(data["best_ever_score"]),
         death_cause=str(data["death_cause"]),
         win_count=int(data.get("win_count", 0)),
         win_needed=int(data.get("win_needed", 0)),
+        population_scores=population_scores,
+        population_death_causes=population_death_causes,
     )
 
 
@@ -135,7 +145,6 @@ def backfill_metrics_from_gen_npz(replays_dir: Path) -> list[GenerationMetrics]:
 
     metrics: list[GenerationMetrics] = []
     best_ever = 0
-    recent_scores: list[int] = []
 
     for path in files:
         data = np.load(path)
@@ -146,10 +155,6 @@ def backfill_metrics_from_gen_npz(replays_dir: Path) -> list[GenerationMetrics]:
         death_cause = str(data["death_cause"]) if "death_cause" in data else "wall"
 
         best_ever = max(best_ever, score)
-        recent_scores.append(score)
-        if len(recent_scores) > 10:
-            recent_scores.pop(0)
-        avg_max10 = sum(recent_scores) / len(recent_scores)
         best_fit, avg_fit = estimate_fitness_from_score(score, grid_cols, grid_rows)
 
         metrics.append(
@@ -161,7 +166,7 @@ def backfill_metrics_from_gen_npz(replays_dir: Path) -> list[GenerationMetrics]:
                 avg_fitness=avg_fit,
                 best_score=score,
                 max_score=score,
-                avg_max10=avg_max10,
+                avg_score=float(max(0, score // 2)),
                 best_ever_score=best_ever,
                 death_cause=death_cause,
             )

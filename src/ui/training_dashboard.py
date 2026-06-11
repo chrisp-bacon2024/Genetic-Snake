@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 import threading
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import config
@@ -25,51 +25,15 @@ _DEATH_COLORS = {
     "timeout": "#4c78a8",
     "win": "#54a24b",
 }
+_WIN_LINE_COLOR = "#54a24b"
+_GRID_MARKER_COLOR = "#9aa0a8"
+_MAX_BOX_PLOTS = 220
 
 
 def _finite(value: float, default: float = 0.0) -> float:
     if math.isnan(value) or math.isinf(value):
         return default
     return value
-
-
-def _score_stages(start_info: TrainingStartInfo | None) -> tuple[tuple[int, int], ...]:
-    """Board sizes to show as separate score panels (curriculum vs fixed grid)."""
-    if start_info is not None and "->" not in start_info.curriculum_note:
-        return ((config.GRID_COLS, config.GRID_ROWS),)
-    return config.CURRICULUM_STAGES
-
-
-def _metrics_for_stage(
-    metrics: list[GenerationMetrics],
-    cols: int,
-    rows: int,
-) -> list[GenerationMetrics]:
-    return [m for m in metrics if m.grid_cols == cols and m.grid_rows == rows]
-
-
-def _stage_xlim(
-    stage_metrics: list[GenerationMetrics],
-    *,
-    min_span: int = 10,
-    right_pad: int = 2,
-) -> tuple[float, float] | None:
-    if not stage_metrics:
-        return None
-    start = stage_metrics[0].generation
-    end = stage_metrics[-1].generation
-    if end - start < min_span - 1:
-        end = start + min_span - 1
-    return (float(start) - 0.5, float(end + right_pad) + 0.5)
-
-
-def _rolling_avg_max10(stage_metrics: list[GenerationMetrics], window: int = 10) -> list[float]:
-    avgs: list[float] = []
-    for end_idx in range(len(stage_metrics)):
-        start_idx = max(0, end_idx - window + 1)
-        slice_ = stage_metrics[start_idx : end_idx + 1]
-        avgs.append(sum(m.max_score for m in slice_) / len(slice_))
-    return avgs
 
 
 def _generation_xlim(
@@ -98,21 +62,108 @@ def _generation_xlim(
     return (float(start) - 0.5, float(end + right_pad) + 0.5)
 
 
-@dataclass
-class _StageScorePanel:
-    cols: int
-    rows: int
-    ax: object
-    artists: dict[str, object] = field(default_factory=dict)
-    win_line: object | None = None
+def _current_stage_win_score(
+    metrics: list[GenerationMetrics],
+    start_info: TrainingStartInfo | None,
+) -> int:
+    """Win threshold for the active grid (line chart Y-axis tracks the current stage only)."""
+    if metrics:
+        latest = metrics[-1]
+        return config.max_win_score(latest.grid_cols, latest.grid_rows)
+    if start_info is not None and "->" in start_info.curriculum_note:
+        cols, rows = config.CURRICULUM_STAGES[0]
+        return config.max_win_score(cols, rows)
+    return config.max_win_score(config.GRID_COLS, config.GRID_ROWS)
 
-    @property
-    def grid_label(self) -> str:
-        return f"{self.cols}x{self.rows}"
 
-    @property
-    def max_win(self) -> int:
-        return config.max_win_score(self.cols, self.rows)
+def _line_score_ylim(
+    metrics: list[GenerationMetrics],
+    start_info: TrainingStartInfo | None,
+) -> tuple[float, float]:
+    peak = _current_stage_win_score(metrics, start_info)
+    return (-0.5, peak + max(2, peak * 0.05))
+
+
+def _grid_transitions(
+    metrics: list[GenerationMetrics],
+) -> list[tuple[int, str]]:
+    """Return (generation, grid_label) for each curriculum stage change."""
+    transitions: list[tuple[int, str]] = []
+    for index in range(1, len(metrics)):
+        prev = metrics[index - 1]
+        cur = metrics[index]
+        if (prev.grid_cols, prev.grid_rows) != (cur.grid_cols, cur.grid_rows):
+            transitions.append((prev.generation, cur.grid_label))
+    return transitions
+
+
+def _win_line_segments(
+    metrics: list[GenerationMetrics],
+) -> list[tuple[int, int, int]]:
+    """Horizontal win thresholds: (start_gen, end_gen, apples_to_win) per grid stage."""
+    if not metrics:
+        return []
+    segments: list[tuple[int, int, int]] = []
+    start_index = 0
+    for index in range(1, len(metrics)):
+        prev = metrics[index - 1]
+        cur = metrics[index]
+        if (prev.grid_cols, prev.grid_rows) != (cur.grid_cols, cur.grid_rows):
+            segments.append(
+                (
+                    metrics[start_index].generation,
+                    prev.generation,
+                    config.max_win_score(prev.grid_cols, prev.grid_rows),
+                )
+            )
+            start_index = index
+    last = metrics[-1]
+    segments.append(
+        (
+            metrics[start_index].generation,
+            last.generation,
+            config.max_win_score(last.grid_cols, last.grid_rows),
+        )
+    )
+    return segments
+
+
+def _normalized_population_scores(metric: GenerationMetrics) -> list[float]:
+    """Score as a fraction of apples needed to win on that generation's grid."""
+    win = config.max_win_score(metric.grid_cols, metric.grid_rows)
+    if win <= 0 or not metric.population_scores:
+        return []
+    return [min(1.0, score / win) for score in metric.population_scores]
+
+
+def _death_cause_fractions(metric: GenerationMetrics) -> dict[str, float]:
+    """Per-cause share of the population for one generation (sums to 1)."""
+    if metric.population_death_causes:
+        counts = Counter(metric.population_death_causes)
+        total = sum(counts.values())
+    else:
+        counts = Counter([metric.death_cause])
+        total = 1
+    if total <= 0:
+        return dict.fromkeys(_DEATH_CAUSES, 0.0)
+    return {cause: counts.get(cause, 0) / total for cause in _DEATH_CAUSES}
+
+
+def _bar_width(generation_count: int, limits: tuple[float, float] | None) -> float:
+    span = max(1.0, (limits[1] - limits[0]) if limits else float(generation_count))
+    return min(0.85, max(0.15, span / max(generation_count, 1) * 0.7))
+
+
+def _box_plot_metrics(metrics: list[GenerationMetrics]) -> list[GenerationMetrics]:
+    """Thin long histories so box plots stay responsive."""
+    with_scores = [m for m in metrics if m.population_scores]
+    if len(with_scores) <= _MAX_BOX_PLOTS:
+        return with_scores
+    step = max(1, len(with_scores) // _MAX_BOX_PLOTS)
+    sampled = with_scores[::step]
+    if sampled[-1] is not with_scores[-1]:
+        sampled.append(with_scores[-1])
+    return sampled
 
 
 @dataclass
@@ -133,11 +184,9 @@ class TrainingDashboard:
         training_done: threading.Event,
         *,
         refresh_ms: int = 400,
-        death_window: int = 40,
     ) -> None:
         self._training_done = training_done
         self._refresh_ms = refresh_ms
-        self._death_window = death_window
         self._lock = threading.Lock()
         self._start_info: TrainingStartInfo | None = None
         self._metrics: list[GenerationMetrics] = []
@@ -186,122 +235,228 @@ class TrainingDashboard:
         import matplotlib.pyplot as plt
 
         plt.style.use("ggplot")
-        snap = self._snapshot()
-        stages = _score_stages(snap.start_info)
-        n_stages = len(stages)
-        fig_height = 4.5 + n_stages * 1.6
-        fig = plt.figure(figsize=(12, fig_height), constrained_layout=True)
+        fig = plt.figure(figsize=(12, 8.5), constrained_layout=True)
         try:
             fig.canvas.manager.set_window_title("Genetic Snake - Training")
         except AttributeError:
             pass
 
-        height_ratios = [0.9] * n_stages + [1.0, 0.45]
-        grid = fig.add_gridspec(n_stages + 2, 2, height_ratios=height_ratios, width_ratios=[1.15, 1.0])
-
-        score_panels: list[_StageScorePanel] = []
-        for row, (cols, rows) in enumerate(stages):
-            ax = fig.add_subplot(grid[row, 0])
-            max_win = config.max_win_score(cols, rows)
-            panel = _StageScorePanel(cols=cols, rows=rows, ax=ax)
-            panel.artists = {
-                "best_score": ax.plot([], [], color="#5a9fd4", label="best", linewidth=1.5)[0],
-                "max_score": ax.plot([], [], color="#9ecae1", alpha=0.85, label="max", linewidth=1)[0],
-                "best_ever": ax.plot([], [], color="#3ecf8e", label="best_ever", linewidth=2)[0],
-                "avg_max10": ax.plot(
-                    [], [], color="#ffd166", linestyle="--", label="avg_max10", linewidth=1.2
-                )[0],
-            }
-            panel.win_line = ax.axhline(
-                max_win,
-                color="#54a24b",
-                linestyle=":",
-                linewidth=1.2,
-                alpha=0.75,
-                label="win",
-            )
-            ax.set_title(f"Scores — {panel.grid_label} (max {max_win})")
-            ax.set_xlabel("Generation")
-            ax.set_ylabel("Apples")
-            ax.set_ylim(-0.5, max_win + max(2, max_win * 0.05))
-            ax.grid(True, alpha=0.35)
-            ax.legend(loc="upper left", fontsize=7, ncol=2)
-            score_panels.append(panel)
-
-        ax_fitness = fig.add_subplot(grid[0:n_stages, 1])
-        ax_death = fig.add_subplot(grid[n_stages, :])
-        ax_status = fig.add_subplot(grid[n_stages + 1, :])
+        grid = fig.add_gridspec(
+            3,
+            2,
+            height_ratios=[1.0, 0.95, 0.4],
+            width_ratios=[1.15, 1.0],
+        )
+        ax_scores = fig.add_subplot(grid[0, 0])
+        ax_boxes = fig.add_subplot(grid[1, 0], sharex=ax_scores)
+        ax_fitness = fig.add_subplot(grid[0, 1])
+        ax_death = fig.add_subplot(grid[1, 1], sharex=ax_fitness)
+        ax_status = fig.add_subplot(grid[2, :])
         ax_status.axis("off")
+
+        score_artists = {
+            "best_score": ax_scores.plot([], [], color="#5a9fd4", label="best", linewidth=1.5)[0],
+            "max_score": ax_scores.plot([], [], color="#9ecae1", alpha=0.85, label="max", linewidth=1)[0],
+            "best_ever": ax_scores.plot([], [], color="#3ecf8e", label="best_ever", linewidth=2)[0],
+            "avg_score": ax_scores.plot(
+                [], [], color="#ffd166", linestyle="--", label="avg", linewidth=1.2
+            )[0],
+        }
+        ax_scores.set_title("Scores (all curriculum stages)")
+        ax_scores.set_ylabel("Apples")
+        ax_scores.grid(True, alpha=0.35)
+        ax_scores.legend(loc="upper left", fontsize=7, ncol=2)
+        plt.setp(ax_scores.get_xticklabels(), visible=False)
+
+        ax_boxes.set_title("Population score distribution (normalized)")
+        ax_boxes.set_xlabel("Generation")
+        ax_boxes.set_ylabel("Score / win")
+        ax_boxes.set_ylim(-0.02, 1.08)
+        ax_boxes.grid(True, alpha=0.35, axis="y")
 
         fitness_artists = {
             "best_fit": ax_fitness.plot([], [], color="#b07aa1", label="best_fit", linewidth=1.5)[0],
             "avg_fit": ax_fitness.plot([], [], color="#d4a6c8", linestyle="--", label="avg_fit", linewidth=1)[0],
         }
         ax_fitness.set_title("Fitness (all stages)")
-        ax_fitness.set_xlabel("Generation")
+        ax_fitness.set_ylabel("Fitness")
         ax_fitness.set_yscale("symlog", linthresh=100.0)
         ax_fitness.grid(True, alpha=0.35)
         ax_fitness.legend(loc="upper left", fontsize=8)
+        plt.setp(ax_fitness.get_xticklabels(), visible=False)
 
-        def _update_stage_scores(
-            panels: list[_StageScorePanel],
+        ax_death.set_title("Death cause (population, normalized)")
+        ax_death.set_xlabel("Generation")
+        ax_death.set_ylabel("Fraction")
+        ax_death.set_ylim(0.0, 1.0)
+        ax_death.grid(True, alpha=0.35, axis="y")
+
+        chart_decorations: list = []
+
+        def _clear_chart_decorations() -> None:
+            for artist in chart_decorations:
+                artist.remove()
+            chart_decorations.clear()
+
+        def _draw_grid_markers(
+            axes: list,
             metrics: list[GenerationMetrics],
+            *,
+            show_labels: bool = False,
         ) -> None:
-            for panel in panels:
-                stage_metrics = _metrics_for_stage(metrics, panel.cols, panel.rows)
-                ax = panel.ax
-                if not stage_metrics:
-                    for artist in panel.artists.values():
-                        artist.set_data([], [])
-                    ax.set_title(f"Scores — {panel.grid_label} (max {panel.max_win}) — not started")
-                    continue
+            for last_old_gen, grid_label in _grid_transitions(metrics):
+                marker_x = last_old_gen + 0.5
+                for axis in axes:
+                    chart_decorations.append(
+                        axis.axvline(
+                            marker_x,
+                            color=_GRID_MARKER_COLOR,
+                            linewidth=1.0,
+                            alpha=0.65,
+                            zorder=0,
+                        )
+                    )
+                if show_labels:
+                    chart_decorations.append(
+                        ax_scores.text(
+                            marker_x,
+                            0.02,
+                            grid_label,
+                            transform=ax_scores.get_xaxis_transform(),
+                            fontsize=7,
+                            color=_GRID_MARKER_COLOR,
+                            ha="left",
+                            va="bottom",
+                            rotation=90,
+                            alpha=0.9,
+                        )
+                    )
 
-                gens = [m.generation for m in stage_metrics]
-                panel.artists["best_score"].set_data(gens, [m.best_score for m in stage_metrics])
-                panel.artists["max_score"].set_data(gens, [m.max_score for m in stage_metrics])
-                panel.artists["best_ever"].set_data(gens, [m.best_ever_score for m in stage_metrics])
-                panel.artists["avg_max10"].set_data(gens, _rolling_avg_max10(stage_metrics))
+        def _draw_win_lines(axes: list, metrics: list[GenerationMetrics]) -> None:
+            for start_gen, end_gen, win_level in _win_line_segments(metrics):
+                for axis in axes:
+                    (line,) = axis.plot(
+                        [start_gen, end_gen],
+                        [win_level, win_level],
+                        color=_WIN_LINE_COLOR,
+                        linestyle=":",
+                        linewidth=1.3,
+                        alpha=0.8,
+                        zorder=1,
+                    )
+                    chart_decorations.append(line)
 
-                limits = _stage_xlim(stage_metrics)
+        def _draw_normalized_win_line(
+            axis,
+            limits: tuple[float, float] | None,
+        ) -> None:
+            if limits is None:
+                return
+            (line,) = axis.plot(
+                [limits[0], limits[1]],
+                [1.0, 1.0],
+                color=_WIN_LINE_COLOR,
+                linestyle=":",
+                linewidth=1.3,
+                alpha=0.8,
+                zorder=1,
+            )
+            chart_decorations.append(line)
+
+        def _update_score_panels(
+            metrics: list[GenerationMetrics],
+            snap: _Snapshot,
+        ) -> None:
+            ylim = _line_score_ylim(metrics, snap.start_info)
+            box_ylim = (-0.02, 1.08)
+            ax_scores.set_ylim(ylim)
+            ax_boxes.set_ylim(box_ylim)
+            limits = _generation_xlim(snap.start_info, metrics)
+            if limits is not None:
+                ax_scores.set_xlim(limits)
+                ax_boxes.set_xlim(limits)
+
+            if not metrics:
+                for artist in score_artists.values():
+                    artist.set_data([], [])
+                ax_boxes.cla()
+                ax_boxes.set_title("Population score distribution (normalized)")
+                ax_boxes.set_xlabel("Generation")
+                ax_boxes.set_ylabel("Score / win")
+                ax_boxes.grid(True, alpha=0.35, axis="y")
+                ax_boxes.set_ylim(box_ylim)
                 if limits is not None:
-                    ax.set_xlim(limits)
-                ax.set_ylim(-0.5, panel.max_win + max(2, panel.max_win * 0.05))
+                    ax_boxes.set_xlim(limits)
+                return
 
-                if metrics and metrics[-1].grid_cols == panel.cols and metrics[-1].grid_rows == panel.rows:
-                    status = "active"
-                else:
-                    status = "complete"
-                ax.set_title(f"Scores — {panel.grid_label} (max {panel.max_win}) — {status}")
+            gens = [m.generation for m in metrics]
+            score_artists["best_score"].set_data(gens, [m.best_score for m in metrics])
+            score_artists["max_score"].set_data(gens, [m.max_score for m in metrics])
+            score_artists["best_ever"].set_data(gens, [m.best_ever_score for m in metrics])
+            score_artists["avg_score"].set_data(gens, [m.avg_score for m in metrics])
+
+            ax_boxes.cla()
+            ax_boxes.set_title("Population score distribution (normalized)")
+            ax_boxes.set_xlabel("Generation")
+            ax_boxes.set_ylabel("Score / win")
+            ax_boxes.grid(True, alpha=0.35, axis="y")
+            ax_boxes.set_ylim(box_ylim)
+            if limits is not None:
+                ax_boxes.set_xlim(limits)
+
+            box_metrics = _box_plot_metrics(metrics)
+            if box_metrics:
+                positions = [m.generation for m in box_metrics]
+                data = [_normalized_population_scores(m) for m in box_metrics]
+                width = _bar_width(len(box_metrics), limits)
+                ax_boxes.boxplot(
+                    data,
+                    positions=positions,
+                    widths=width,
+                    showfliers=False,
+                    patch_artist=True,
+                    boxprops={"facecolor": "#5a9fd4", "alpha": 0.35, "linewidth": 0.8},
+                    medianprops={"color": "#1f4e79", "linewidth": 1.2},
+                    whiskerprops={"color": "#5a9fd4", "linewidth": 0.8},
+                    capprops={"color": "#5a9fd4", "linewidth": 0.8},
+                )
+
+            _draw_grid_markers([ax_scores, ax_boxes], metrics, show_labels=True)
+            _draw_win_lines([ax_scores], metrics)
+            _draw_normalized_win_line(ax_boxes, limits)
 
         def _update_death_chart(metrics: list[GenerationMetrics], snap: _Snapshot) -> None:
             ax_death.clear()
-            ax_death.set_title(f"Death cause (best snake, rolling {self._death_window}-gen window)")
+            ax_death.set_title("Death cause (population, normalized)")
             ax_death.set_xlabel("Generation")
-            ax_death.set_ylabel("Count in window")
+            ax_death.set_ylabel("Fraction")
+            ax_death.set_ylim(0.0, 1.0)
             ax_death.grid(True, alpha=0.35, axis="y")
             limits = _generation_xlim(snap.start_info, metrics)
             if limits is not None:
                 ax_death.set_xlim(limits)
-            if len(metrics) < 2:
+            if not metrics:
                 return
 
-            gens = [m.generation for m in metrics]
-            window = min(self._death_window, len(metrics))
+            bar_metrics = _box_plot_metrics(metrics)
+            gens = [m.generation for m in bar_metrics]
+            width = _bar_width(len(bar_metrics), limits)
+            bottom = [0.0] * len(bar_metrics)
             for cause in _DEATH_CAUSES:
-                counts = []
-                for end_idx in range(len(metrics)):
-                    start_idx = max(0, end_idx - window + 1)
-                    slice_ = metrics[start_idx : end_idx + 1]
-                    counts.append(sum(1 for item in slice_ if item.death_cause == cause))
-                ax_death.plot(
+                fracs = [_death_cause_fractions(m)[cause] for m in bar_metrics]
+                ax_death.bar(
                     gens,
-                    counts,
-                    label=cause,
+                    fracs,
+                    width=width,
+                    bottom=bottom,
                     color=_DEATH_COLORS[cause],
-                    linewidth=1.5,
-                    alpha=0.9,
+                    label=cause,
+                    align="center",
+                    edgecolor="none",
                 )
-            ax_death.legend(loc="upper right", ncol=5, fontsize=8)
+                bottom = [base + frac for base, frac in zip(bottom, fracs)]
+            ax_death.legend(loc="upper left", ncol=5, fontsize=7)
+            _draw_grid_markers([ax_death], metrics)
 
         def _update_status(ax, snap: _Snapshot, metrics: list[GenerationMetrics]) -> None:
             ax.clear()
@@ -339,7 +494,7 @@ class TrainingDashboard:
                 f"{header}\n"
                 f"Latest  gen {latest.generation}  grid {latest.grid_label}  died {latest.death_cause}{wins}\n"
                 f"         best_score {latest.best_score}  max_score {latest.max_score}  "
-                f"best_ever {latest.best_ever_score}  avg_max10 {latest.avg_max10:.1f}\n"
+                f"best_ever {latest.best_ever_score}  avg_score {latest.avg_score:.1f}\n"
                 f"         best_fit {latest.best_fitness:.2f}  avg_fit {latest.avg_fitness:.2f}\n"
                 f"Recent deaths (20 gens): {dict(cause_counts)}"
             )
@@ -370,7 +525,8 @@ class TrainingDashboard:
                 snap = self._snapshot()
                 metrics = snap.metrics
 
-                _update_stage_scores(score_panels, metrics)
+                _clear_chart_decorations()
+                _update_score_panels(metrics, snap)
 
                 if metrics:
                     gens = [m.generation for m in metrics]
@@ -388,7 +544,15 @@ class TrainingDashboard:
                     if positive:
                         ax_fitness.set_ylim(min(positive) * 0.5, max(positive) * 2.0)
 
+                    _draw_grid_markers([ax_fitness], metrics)
                     _update_death_chart(metrics, snap)
+                else:
+                    ax_death.clear()
+                    ax_death.set_title("Death cause (population, normalized)")
+                    ax_death.set_xlabel("Generation")
+                    ax_death.set_ylabel("Fraction")
+                    ax_death.set_ylim(0.0, 1.0)
+                    ax_death.grid(True, alpha=0.35, axis="y")
 
                 _update_status(ax_status, snap, metrics)
             except Exception as exc:

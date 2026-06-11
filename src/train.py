@@ -163,6 +163,17 @@ def _crossover_rate_for_args(args: argparse.Namespace) -> float:
     return 0.0 if args.asexual else config.CROSSOVER_RATE
 
 
+def _apply_cli_config(args: argparse.Namespace) -> None:
+    if args.replays_dir:
+        config.REPLAYS_DIR = args.replays_dir
+
+    fraction = args.curriculum_win_pct / 100.0
+    if not 0.0 < fraction <= 1.0:
+        raise SystemExit("--curriculum-win-pct must be greater than 0 and at most 100.")
+    config.CURRICULUM_ADVANCE_WIN_FRACTION = fraction
+    config.TRAINING_STOP_WIN_FRACTION = fraction
+
+
 def _resolve_curriculum(args: argparse.Namespace, checkpoint_curriculum: Curriculum | None) -> Curriculum | None:
     if not args.curriculum:
         return None
@@ -319,7 +330,6 @@ def run_training(
     else:
         _print_start_info(start_info)
 
-    recent_max_scores: list[int] = []
     training_log_path = replays / TRAINING_LOG_NAME
 
     for generation in range(start_generation, end_generation):
@@ -328,6 +338,8 @@ def run_training(
             grid_cols, grid_rows = stage.cols, stage.rows
         else:
             grid_cols, grid_rows = config.GRID_COLS, config.GRID_ROWS
+        # Metrics and replays must use the grid snakes were evaluated on, not a post-advance grid.
+        eval_grid_cols, eval_grid_rows = grid_cols, grid_rows
 
         if config.SHARED_EVAL_SEEDS:
             _set_generation_scenarios(simulator, generation, screening_runs)
@@ -432,8 +444,8 @@ def run_training(
             best.genome.genes,
             best.score,
             best_seed,
-            grid_cols,
-            grid_rows,
+            eval_grid_cols,
+            eval_grid_rows,
             death_cause=best.death_cause,
         )
 
@@ -445,8 +457,8 @@ def run_training(
                 best.genome.genes,
                 best.score,
                 best_seed,
-                grid_cols,
-                grid_rows,
+                eval_grid_cols,
+                eval_grid_rows,
                 death_cause=best.death_cause,
             )
 
@@ -457,29 +469,31 @@ def run_training(
                 hall_of_fame.genome.genes,
                 hall_of_fame.score,
                 hall_of_fame.best_food_seed,
-                grid_cols,
-                grid_rows,
+                eval_grid_cols,
+                eval_grid_rows,
                 death_cause=hall_of_fame.death_cause,
             )
 
-        grid_label = f"{grid_cols}x{grid_rows}"
-        recent_max_scores.append(max_score)
-        if len(recent_max_scores) > 10:
-            recent_max_scores.pop(0)
-        avg_max = sum(recent_max_scores) / len(recent_max_scores)
+        grid_label = f"{eval_grid_cols}x{eval_grid_rows}"
+        pop_size = len(population.individuals)
+        avg_score = (
+            sum(ind.score for ind in population.individuals) / pop_size if pop_size else 0.0
+        )
         metrics = GenerationMetrics(
             generation=generation,
-            grid_cols=grid_cols,
-            grid_rows=grid_rows,
+            grid_cols=eval_grid_cols,
+            grid_rows=eval_grid_rows,
             best_fitness=best.fitness,
             avg_fitness=population.average_fitness(),
             best_score=best.score,
             max_score=max_score,
-            avg_max10=avg_max,
+            avg_score=avg_score,
             best_ever_score=best_ever_score,
             death_cause=best.death_cause,
             win_count=gen_win_count,
             win_needed=gen_win_needed,
+            population_scores=tuple(ind.score for ind in population.individuals),
+            population_death_causes=tuple(ind.death_cause for ind in population.individuals),
         )
         append_training_log(training_log_path, metrics)
         if observer is not None:
@@ -671,6 +685,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Use curriculum stages from config (default when CURRICULUM_ENABLED).",
     )
     parser.set_defaults(curriculum=config.CURRICULUM_ENABLED)
+    parser.add_argument(
+        "--curriculum-win-pct",
+        type=float,
+        default=config.CURRICULUM_ADVANCE_WIN_FRACTION * 100.0,
+        metavar="PCT",
+        help=(
+            "Percent of the population that must win to advance a curriculum stage "
+            "or stop early on the final board (default: %(default)g)."
+        ),
+    )
     stop_group = parser.add_mutually_exclusive_group()
     stop_group.add_argument(
         "--stop-on-win",
@@ -710,8 +734,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv if argv is not None else sys.argv[1:])
-    if args.replays_dir:
-        config.REPLAYS_DIR = args.replays_dir
+    _apply_cli_config(args)
     if args.dashboard:
         import matplotlib
 

@@ -115,6 +115,30 @@ class AIController(Controller):
         self._last_direction = self._game.snake.direction
         self._last_snapshot = self._empty_snapshot()
 
+    def seek_to_score(self, target_score: int) -> bool:
+        """
+        Reset the same scenario and simulate until ``target_score`` is reached.
+
+        Uses the current network from the start of the run. Returns True when the
+        final score is at least ``target_score`` (including after a win).
+        """
+        grid = self._game.grid
+        max_score = config.max_win_score(grid.width, grid.height)
+        target = max(0, min(int(target_score), max_score))
+        self._game.reset()
+        self.reset()
+        if target == 0:
+            self.get_direction()
+            return True
+
+        step_budget = grid.width * grid.height * max(1, target) * 8
+        for _ in range(step_budget):
+            if not self._game.alive or self._game.score >= target:
+                break
+            direction = self.get_direction()
+            self._game.tick(direction)
+        return self._game.score >= target
+
     def _empty_snapshot(self) -> NetworkSnapshot:
         if NeuralNetwork.is_recurrent():
             hidden_size = NeuralNetwork.rnn_hidden_size()
