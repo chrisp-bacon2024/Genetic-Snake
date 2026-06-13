@@ -92,7 +92,6 @@ export class DemoSection {
     const renderer = new BoardRenderer(canvas, entry.grid_cols, entry.grid_rows);
     const player = new ReplayPlayer();
     player.setLoop(false);
-    await player.load(entry.path);
     player.onFrame((frame) => renderer.draw(frame));
 
     const tile: DemoTile = {
@@ -111,6 +110,8 @@ export class DemoSection {
 
     this.gridRoot.appendChild(root);
     this.tiles.push(tile);
+
+    await player.load(entry.path);
     player.startLoop();
   }
 
