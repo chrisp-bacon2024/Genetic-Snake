@@ -1,4 +1,5 @@
 import { lerpColor, rgb, snakeLayout, theme } from "../styles/theme";
+import { inputFeatureColor, proximityActivation } from "./neuronColors";
 import type { LiteReplayFrame } from "./types";
 import { DIRECTION_DELTA, relativeRayDeltas } from "./types";
 
@@ -473,34 +474,48 @@ export class BoardRenderer {
     const [headX, headY] = frame.snake[0];
     const body = new Set(frame.snake.slice(1).map(([x, y]) => `${x},${y}`));
     const deltas = relativeRayDeltas(frame.direction);
+    const inputs = frame.inputs;
     const lineWidth = Math.max(1, layout.cellSize / 22);
     const endRadius = Math.max(1, layout.cellSize / 16);
 
     for (const [dx, dy] of deltas) {
-      const end = castRay(headX, headY, dx, dy, layout.cols, layout.rows, body);
+      const cast = castRay(headX, headY, dx, dy, layout.cols, layout.rows, body);
+      const hitsBody = hitsBodyFirst(cast);
+      const value = obstacleProximity(cast);
+      const color = inputFeatureColor(hitsBody ? 2 : 0, value);
+      const { endX, endY } = rayEndCell(headX, headY, dx, dy, cast);
       const [x0, y0] = this.cellCenter(headX, headY);
-      const [x1, y1] = this.cellCenter(end.x, end.y);
+      const [x1, y1] = this.cellCenter(endX, endY);
 
-      ctx.strokeStyle = rgb(end.kind === "body" ? theme.rayBody : theme.rayWall, 0.85);
+      if (x0 === x1 && y0 === y1) {
+        continue;
+      }
+
+      ctx.strokeStyle = rgb(color);
       ctx.lineWidth = lineWidth;
       ctx.beginPath();
       ctx.moveTo(x0, y0);
       ctx.lineTo(x1, y1);
       ctx.stroke();
-      this.fillCircle(x1, y1, endRadius, end.kind === "body" ? theme.rayBody : theme.rayWall);
+      this.fillCircle(x1, y1, endRadius, color);
     }
 
     const [foodX, foodY] = frame.food;
     if (foodX !== headX || foodY !== headY) {
+      let foodAlign = 0;
+      if (inputs && inputs.length >= deltas.length * 3) {
+        foodAlign = Math.max(...Array.from({ length: deltas.length }, (_, i) => inputs[i * 3 + 1] ?? 0));
+      }
+      const foodColor = inputFeatureColor(1, foodAlign);
       const [x0, y0] = this.cellCenter(headX, headY);
       const [x1, y1] = this.cellCenter(foodX, foodY);
-      ctx.strokeStyle = rgb(theme.rayFood, 0.85);
+      ctx.strokeStyle = rgb(foodColor);
       ctx.lineWidth = lineWidth;
       ctx.beginPath();
       ctx.moveTo(x0, y0);
       ctx.lineTo(x1, y1);
       ctx.stroke();
-      this.fillCircle(x1, y1, endRadius, theme.rayFood);
+      this.fillCircle(x1, y1, endRadius, foodColor);
     }
   }
 
@@ -564,10 +579,40 @@ export class BoardRenderer {
   }
 }
 
-interface RayEnd {
-  x: number;
-  y: number;
-  kind: "wall" | "body";
+interface RayCast {
+  wallSteps: number;
+  bodySteps: number | null;
+}
+
+function hitsBodyFirst(cast: RayCast): boolean {
+  return cast.bodySteps !== null && cast.bodySteps < cast.wallSteps;
+}
+
+function obstacleProximity(cast: RayCast): number {
+  if (hitsBodyFirst(cast)) {
+    return proximityActivation(cast.bodySteps);
+  }
+  return proximityActivation(cast.wallSteps);
+}
+
+function rayEndCell(
+  headX: number,
+  headY: number,
+  dx: number,
+  dy: number,
+  cast: RayCast,
+): { endX: number; endY: number } {
+  if (hitsBodyFirst(cast)) {
+    return {
+      endX: headX + dx * cast.bodySteps!,
+      endY: headY + dy * cast.bodySteps!,
+    };
+  }
+  const steps = Math.max(0, cast.wallSteps - 1);
+  return {
+    endX: headX + dx * steps,
+    endY: headY + dy * steps,
+  };
 }
 
 function castRay(
@@ -578,24 +623,21 @@ function castRay(
   cols: number,
   rows: number,
   body: Set<string>,
-): RayEnd {
+): RayCast {
   let x = headX;
   let y = headY;
-  let steps = 0;
+  let wallSteps = 0;
+  let bodySteps: number | null = null;
 
   while (true) {
     x += dx;
     y += dy;
-    steps += 1;
+    wallSteps += 1;
     if (x < 0 || y < 0 || x >= cols || y >= rows) {
-      return {
-        x: headX + dx * Math.max(0, steps - 1),
-        y: headY + dy * Math.max(0, steps - 1),
-        kind: "wall",
-      };
+      return { wallSteps, bodySteps };
     }
-    if (body.has(`${x},${y}`)) {
-      return { x, y, kind: "body" };
+    if (bodySteps === null && body.has(`${x},${y}`)) {
+      bodySteps = wallSteps;
     }
   }
 }

@@ -1,4 +1,5 @@
 import { lerpColor, rgb, theme } from "../styles/theme";
+import { inputFeatureColor } from "./neuronColors";
 import type { DirectionName, LiteReplayFrame } from "./types";
 
 type Rgb = readonly [number, number, number];
@@ -26,11 +27,6 @@ const INPUT_LABELS = ["Wall", "Food", "Body"];
 
 function clamp(value: number): number {
   return Math.min(1, Math.max(0, value));
-}
-
-function inputFeatureColor(featureRow: number, value: number): Rgb {
-  const bases = [theme.neuronInputWall, theme.neuronInputFood, theme.neuronInputBody];
-  return lerpColor(theme.neuronInactive, bases[featureRow] ?? theme.neuronInactive, clamp(value));
 }
 
 function featureRowColor(base: Rgb, value: number): Rgb {
