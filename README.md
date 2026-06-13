@@ -2,7 +2,7 @@
 
 Snake controlled by a small neural network, trained with a genetic algorithm. The pygame app shows the board and a live network panel; headless training evolves populations on configurable grid sizes with curriculum learning.
 
-**Portfolio demo site:** see [`site/README.md`](site/README.md) for the recruiter-facing replay site (`cd site && npm install && npm run dev`).
+**Portfolio demo site:** [chrisp-bacon2024.github.io/Genetic-Snake](https://chrisp-bacon2024.github.io/Genetic-Snake/) — local dev in [`site/README.md`](site/README.md) (`cd site && npm install && npm run dev`).
 
 ---
 

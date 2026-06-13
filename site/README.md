@@ -26,6 +26,12 @@ python scripts/export_site_data.py --replays-dir src/replays --featured-generati
 python scripts/export_site_data.py --metrics-only --replays-dir src/replays
 ```
 
+## Live site
+
+**https://chrisp-bacon2024.github.io/Genetic-Snake/**
+
+Pushes to `main` that touch `site/` trigger [GitHub Actions](../.github/workflows/deploy-site.yml) to rebuild and publish.
+
 ## Run locally
 
 ```bash
