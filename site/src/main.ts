@@ -89,24 +89,9 @@ function renderShell(): void {
         <h2>Ten generations at once</h2>
         <p>
           Ten checkpoints in chronological order — two rows of five — from the first evolved rays
-          through 10×10 mastery to the final 20×20 win. Each tile replays the full saved run.
-          Use the controls to pause or speed up playback — try 20× or 50× for long 20×20 games.
-          Each board shows an end screen when its run finishes, then restarts on its own. Click a
-          tile to inspect it in the featured player.
+          through 10×10 mastery to the final 20×20 win. Each tile replays the full saved run at
+          a fixed speed and restarts on its own. Click a tile to inspect it in the featured player.
         </p>
-        <div class="demo-controls">
-          <button class="btn" id="demo-play" type="button">Pause</button>
-          <label>
-            Speed
-            <select class="speed-select" id="demo-speed">
-              <option value="1">1×</option>
-              <option value="3" selected>3×</option>
-              <option value="10">10×</option>
-              <option value="20">20×</option>
-              <option value="50">50×</option>
-            </select>
-          </label>
-        </div>
         <div class="grid-demo" id="grid-demo"></div>
       </section>
 
@@ -115,8 +100,8 @@ function renderShell(): void {
         <h2>Vision rays and network outputs</h2>
         <p id="featured-intro">
           The featured player shows heading-relative vision rays and a live neural-network panel
-          matching the pygame app: input rays, feature groups, hidden activations, and output
-          arrows for the chosen move.
+          matching the pygame app. Use the controls below the network to pause, change speed, or
+          switch generation — try 20× or 50× for long 20×20 runs.
         </p>
         <div class="featured-demo">
           <div class="featured-board-wrap">
@@ -125,6 +110,23 @@ function renderShell(): void {
           </div>
           <div class="featured-side">
             <canvas id="network-panel"></canvas>
+            <div class="featured-controls">
+              <button class="btn" id="featured-play" type="button">Pause</button>
+              <label>
+                Speed
+                <select class="speed-select" id="featured-speed">
+                  <option value="1">1×</option>
+                  <option value="3" selected>3×</option>
+                  <option value="10">10×</option>
+                  <option value="20">20×</option>
+                  <option value="50">50×</option>
+                </select>
+              </label>
+              <label>
+                Generation
+                <select class="speed-select" id="featured-generation"></select>
+              </label>
+            </div>
           </div>
         </div>
       </section>
@@ -164,8 +166,9 @@ async function bootstrap(): Promise<void> {
     document.getElementById("featured-meta")!,
     document.getElementById("network-panel") as HTMLCanvasElement,
     {
-      playButton: document.getElementById("demo-play") as HTMLButtonElement,
-      speedSelect: document.getElementById("demo-speed") as HTMLSelectElement,
+      playButton: document.getElementById("featured-play") as HTMLButtonElement,
+      speedSelect: document.getElementById("featured-speed") as HTMLSelectElement,
+      generationSelect: document.getElementById("featured-generation") as HTMLSelectElement,
     },
   );
   await demo.init();

@@ -13,6 +13,7 @@ interface DemoTile {
 }
 
 const END_HOLD_MS = 2500;
+const GRID_TILE_SPEED = 3;
 
 export class DemoSection {
   private readonly gridRoot: HTMLElement;
@@ -21,9 +22,10 @@ export class DemoSection {
   private readonly featuredRenderer: BoardRenderer;
   private readonly networkVisualizer: NetworkVisualizer;
   private readonly featuredPlayer = new ReplayPlayer();
+  private readonly generationSelect: HTMLSelectElement;
   private tiles: DemoTile[] = [];
-  private playing = true;
-  private speed = 1;
+  private featuredPlaying = true;
+  private featuredSpeed = 3;
   private activeGeneration = 215;
   private featuredRestartTimeout = 0;
 
@@ -36,40 +38,63 @@ export class DemoSection {
     controls: {
       playButton: HTMLButtonElement;
       speedSelect: HTMLSelectElement;
+      generationSelect: HTMLSelectElement;
     },
   ) {
     this.gridRoot = gridRoot;
     this.featuredMeta = featuredMeta;
     this.networkPanel = networkPanel;
+    this.generationSelect = controls.generationSelect;
     this.featuredRenderer = new BoardRenderer(featuredBoard, 20, 20, 380);
     this.networkVisualizer = new NetworkVisualizer(networkPanel);
     this.activeGeneration = manifest.default_featured_generation;
 
+    this.populateGenerationSelect();
+
     this.featuredPlayer.setLoop(false);
     this.featuredPlayer.onFrame((frame) => {
-      this.featuredRenderer.draw(frame, { showRays: true });
+      this.featuredRenderer.draw(frame, { showRays: this.featuredSpeed < 10 });
       this.networkVisualizer.draw(frame);
     });
     this.featuredPlayer.onComplete(() => this.scheduleFeaturedRestart());
 
     controls.playButton.addEventListener("click", () => {
-      this.playing = !this.playing;
-      controls.playButton.textContent = this.playing ? "Pause" : "Play";
-      this.syncPlayback();
+      this.featuredPlaying = !this.featuredPlaying;
+      controls.playButton.textContent = this.featuredPlaying ? "Pause" : "Play";
+      this.syncFeaturedPlayback();
     });
 
     controls.speedSelect.addEventListener("change", () => {
-      this.speed = Number(controls.speedSelect.value);
-      this.syncSpeed();
+      this.featuredSpeed = Number(controls.speedSelect.value);
+      this.featuredPlayer.setSpeed(this.featuredSpeed);
     });
+
+    this.generationSelect.addEventListener("change", () => {
+      void this.selectFeatured(Number(this.generationSelect.value));
+    });
+  }
+
+  private populateGenerationSelect(): void {
+    const entries = [...this.manifest.featured_generations].sort(
+      (a, b) => a.generation - b.generation,
+    );
+
+    this.generationSelect.replaceChildren(
+      ...entries.map((entry) => {
+        const option = document.createElement("option");
+        option.value = String(entry.generation);
+        option.textContent = `Gen ${entry.generation} · score ${entry.score} · ${entry.grid_cols}×${entry.grid_rows}`;
+        option.selected = entry.generation === this.activeGeneration;
+        return option;
+      }),
+    );
   }
 
   async init(): Promise<void> {
     this.networkVisualizer.resize(this.networkPanel.clientWidth || 280);
     await Promise.all(this.manifest.grid_generations.map((entry) => this.createTile(entry)));
-    this.syncSpeed();
-    this.syncPlayback();
     await this.loadFeatured(this.activeGeneration);
+    this.featuredPlayer.setSpeed(this.featuredSpeed);
     this.featuredPlayer.startLoop();
   }
 
@@ -92,6 +117,7 @@ export class DemoSection {
     const renderer = new BoardRenderer(canvas, entry.grid_cols, entry.grid_rows);
     const player = new ReplayPlayer();
     player.setLoop(false);
+    player.setSpeed(GRID_TILE_SPEED);
     player.onFrame((frame) => renderer.draw(frame));
 
     const tile: DemoTile = {
@@ -105,7 +131,7 @@ export class DemoSection {
     player.onComplete(() => this.scheduleTileRestart(tile));
 
     root.addEventListener("click", () => {
-      void this.selectFeatured(entry.generation);
+      void this.selectFeatured(entry.generation, { scroll: true });
     });
 
     this.gridRoot.appendChild(root);
@@ -132,9 +158,6 @@ export class DemoSection {
   private scheduleTileRestart(tile: DemoTile): void {
     window.clearTimeout(tile.restartTimeout);
     tile.restartTimeout = window.setTimeout(() => {
-      if (!this.playing) {
-        return;
-      }
       tile.player.restart();
     }, END_HOLD_MS);
   }
@@ -142,20 +165,29 @@ export class DemoSection {
   private scheduleFeaturedRestart(): void {
     window.clearTimeout(this.featuredRestartTimeout);
     this.featuredRestartTimeout = window.setTimeout(() => {
-      if (!this.playing) {
+      if (!this.featuredPlaying) {
         return;
       }
       this.featuredPlayer.restart();
     }, END_HOLD_MS);
   }
 
-  private async selectFeatured(generation: number): Promise<void> {
+  private async selectFeatured(
+    generation: number,
+    options: { scroll?: boolean } = {},
+  ): Promise<void> {
     this.activeGeneration = generation;
+    this.generationSelect.value = String(generation);
+
     for (const tile of this.tiles) {
       tile.root.classList.toggle("active", tile.entry.generation === generation);
     }
+
     await this.loadFeatured(generation);
-    document.getElementById("featured")?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    if (options.scroll) {
+      document.getElementById("featured")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }
 
   private async loadFeatured(generation: number): Promise<void> {
@@ -171,21 +203,13 @@ export class DemoSection {
 
     this.featuredPlayer.stopLoop();
     await this.featuredPlayer.load(this.featuredReplayPath(entry));
-    this.featuredPlayer.setSpeed(this.speed);
-    this.featuredPlayer.setPlaying(this.playing);
+    this.featuredPlayer.setSpeed(this.featuredSpeed);
+    this.featuredPlayer.setPlaying(this.featuredPlaying);
     this.featuredPlayer.startLoop();
   }
 
-  private syncPlayback(): void {
-    if (this.playing) {
-      for (const tile of this.tiles) {
-        if (tile.player.isFinished) {
-          tile.player.restart();
-        } else {
-          tile.player.setPlaying(true);
-        }
-        window.clearTimeout(tile.restartTimeout);
-      }
+  private syncFeaturedPlayback(): void {
+    if (this.featuredPlaying) {
       window.clearTimeout(this.featuredRestartTimeout);
       if (this.featuredPlayer.isFinished) {
         this.featuredPlayer.restart();
@@ -193,19 +217,8 @@ export class DemoSection {
         this.featuredPlayer.setPlaying(true);
       }
     } else {
-      for (const tile of this.tiles) {
-        tile.player.setPlaying(false);
-        window.clearTimeout(tile.restartTimeout);
-      }
       window.clearTimeout(this.featuredRestartTimeout);
       this.featuredPlayer.setPlaying(false);
     }
-  }
-
-  private syncSpeed(): void {
-    for (const tile of this.tiles) {
-      tile.player.setSpeed(this.speed);
-    }
-    this.featuredPlayer.setSpeed(this.speed);
   }
 }

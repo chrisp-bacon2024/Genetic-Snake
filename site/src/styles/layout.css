@@ -197,35 +197,6 @@
   color: rgb(180, 180, 195);
 }
 
-.demo-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-  margin: 1.25rem 0;
-}
-
-.demo-controls label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.9rem;
-  color: rgb(160, 160, 180);
-}
-
-.demo-controls select,
-.demo-controls button {
-  font: inherit;
-}
-
-.speed-select {
-  padding: 0.4rem 0.6rem;
-  border-radius: 6px;
-  border: 1px solid rgb(70, 70, 90);
-  background: rgb(32, 32, 42);
-  color: rgb(220, 220, 230);
-}
-
 .grid-demo {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -295,6 +266,49 @@
   border: 1px solid rgb(40, 40, 52);
   border-radius: 10px;
   background: rgb(24, 24, 32);
+}
+
+.featured-side {
+  display: flex;
+  flex-direction: column;
+}
+
+.featured-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgb(40, 40, 52);
+}
+
+.featured-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: rgb(160, 160, 180);
+}
+
+.featured-controls select,
+.featured-controls button {
+  font: inherit;
+}
+
+.featured-controls .speed-select {
+  min-width: 4.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid rgb(70, 70, 90);
+  background: rgb(32, 32, 42);
+  color: rgb(220, 220, 230);
+}
+
+.featured-controls #featured-generation {
+  min-width: 11rem;
+  max-width: 100%;
 }
 
 .featured-board-wrap canvas {
