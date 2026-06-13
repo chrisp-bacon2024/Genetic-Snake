@@ -230,7 +230,7 @@ def _plot_death_cause_bars(
         if cause in present_causes
     ]
     if handles:
-        ax.legend(handles=handles, loc="upper right", ncol=min(4, len(handles)), fontsize=9)
+        ax.legend(handles=handles, loc="upper left", ncol=min(4, len(handles)), fontsize=9)
 
 def plot_analysis(
     records: list[GenerationRecord],
