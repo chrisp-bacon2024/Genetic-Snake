@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
-DeathCause = Literal["wall", "body", "starved", "timeout", "win"]
+DeathCause = Literal["wall", "body", "starved", "win"]
 
 
 @dataclass(frozen=True, slots=True)

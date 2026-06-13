@@ -25,6 +25,8 @@ import numpy as np
 import config
 from evolution.genome import Genome
 from game.game_state import DeathCause
+
+DEATH_CAUSES: tuple[DeathCause, ...] = ("body", "wall", "starved", "win")
 from models.grid import Grid
 from neural.network import NeuralNetwork
 from simulation.headless import HeadlessSimulator, Scenario
@@ -64,7 +66,9 @@ def load_records(replays_dir: Path, *, resim: bool) -> list[GenerationRecord]:
         death_cause: DeathCause | None = None
         if "death_cause" in data:
             raw = str(data["death_cause"])
-            if raw in ("body", "wall", "starved", "timeout", "win"):
+            if raw == "timeout":
+                raw = "starved"
+            if raw in DEATH_CAUSES:
                 death_cause = raw  # type: ignore[assignment]
 
         resim_score: int | None = None
@@ -126,22 +130,61 @@ def _rolling_mean(values: np.ndarray, window: int) -> np.ndarray:
     return np.convolve(values, kernel, mode="same")
 
 
-def _death_cause_counts(records: list[GenerationRecord], window: int) -> dict[str, np.ndarray]:
-    causes: tuple[DeathCause, ...] = ("body", "wall", "starved", "timeout", "win")
-    generations = np.array([record.generation for record in records], dtype=np.int64)
-    counts = {cause: np.zeros(len(records), dtype=np.float64) for cause in causes}
-    half = max(0, window // 2)
+def _bar_width(generations: np.ndarray) -> float:
+    if len(generations) <= 1:
+        return 0.8
+    gaps = np.diff(generations.astype(np.float64))
+    positive = gaps[gaps > 0]
+    if len(positive) == 0:
+        return 0.8
+    return max(0.35, float(np.min(positive)) * 0.85)
 
-    for index, record in enumerate(records):
+
+def _death_cause_colors() -> dict[str, str]:
+    return {
+        "body": "#e45756",
+        "wall": "#f58518",
+        "starved": "#72b7b2",
+        "win": "#54a24b",
+    }
+
+
+def _plot_death_cause_bars(
+    ax,
+    records: list[GenerationRecord],
+    generations: np.ndarray,
+) -> None:
+    from matplotlib.patches import Patch
+
+    colors = _death_cause_colors()
+    width = _bar_width(generations)
+    present_causes: set[str] = set()
+
+    for record in records:
         if record.death_cause is None:
             continue
-        start = max(0, index - half)
-        end = min(len(records), index + half + 1)
-        span = end - start
-        counts[record.death_cause][start:end] += 1.0 / span
+        present_causes.add(record.death_cause)
+        ax.bar(
+            record.generation,
+            1.0,
+            width=width,
+            color=colors[record.death_cause],
+            align="center",
+            edgecolor="none",
+        )
 
-    return {"generations": generations, **counts}
+    ax.set_ylim(0.0, 1.05)
+    ax.set_yticks([])
+    ax.set_ylabel("Best-run outcome")
+    ax.grid(True, alpha=0.25, axis="x")
 
+    handles = [
+        Patch(facecolor=colors[cause], label=cause)
+        for cause in DEATH_CAUSES
+        if cause in present_causes
+    ]
+    if handles:
+        ax.legend(handles=handles, loc="upper right", ncol=min(5, len(handles)), fontsize=9)
 
 def plot_analysis(
     records: list[GenerationRecord],
@@ -197,7 +240,7 @@ def plot_analysis(
     if has_causes:
         cause_totals = {
             cause: sum(1 for record in records if record.death_cause == cause)
-            for cause in ("body", "wall", "starved", "timeout", "win")
+            for cause in DEATH_CAUSES
         }
         dominant = max(cause_totals, key=cause_totals.get)
         summary_lines.append(
@@ -209,26 +252,8 @@ def plot_analysis(
 
     if has_causes:
         ax_cause = axes[2]
-        cause_data = _death_cause_counts(records, window)
-        colors = {
-            "body": "#e45756",
-            "wall": "#f58518",
-            "starved": "#72b7b2",
-            "timeout": "#4c78a8",
-            "win": "#54a24b",
-        }
-        for cause in ("body", "wall", "starved", "timeout", "win"):
-            ax_cause.plot(
-                cause_data["generations"],
-                cause_data[cause],
-                label=cause,
-                color=colors[cause],
-                linewidth=1.8,
-            )
-        ax_cause.set_ylabel(f"Death cause share\n({window}-gen window)")
+        _plot_death_cause_bars(ax_cause, records, generations)
         ax_cause.set_xlabel("Generation")
-        ax_cause.grid(True, alpha=0.25)
-        ax_cause.legend(loc="upper right", ncol=4, fontsize=9)
     else:
         ax_best.set_xlabel("Generation")
 
@@ -278,7 +303,7 @@ def print_summary(records: list[GenerationRecord], *, window: int) -> None:
         tail = records[-window:]
         counts = {
             cause: sum(1 for record in tail if record.death_cause == cause)
-            for cause in ("body", "wall", "starved", "timeout", "win")
+            for cause in DEATH_CAUSES
         }
         print(f"Last {window}-gen death causes (best snake): {counts}")
 

@@ -17,12 +17,11 @@ from pathlib import Path
 import config
 from evolution.training_metrics import GenerationMetrics, TrainingStartInfo
 
-_DEATH_CAUSES = ("body", "wall", "starved", "timeout", "win")
+_DEATH_CAUSES = ("body", "wall", "starved", "win")
 _DEATH_COLORS = {
     "body": "#e45756",
     "wall": "#f58518",
     "starved": "#72b7b2",
-    "timeout": "#4c78a8",
     "win": "#54a24b",
 }
 _WIN_LINE_COLOR = "#54a24b"

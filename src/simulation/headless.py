@@ -215,7 +215,7 @@ class HeadlessSimulator:
         current = game.snake.direction
         while game.alive:
             if self._max_steps is not None and steps >= self._max_steps:
-                return game.score, steps, "timeout", shaping_bonus, False, 0.0, steps_to_first_eat
+                return game.score, steps, "starved", shaping_bonus, False, 0.0, steps_to_first_eat
             prev_score = game.score
             prev_dist = _manhattan_distance(game.snake.head(), game.food.position)
             current, hidden, _ = decide_step(
