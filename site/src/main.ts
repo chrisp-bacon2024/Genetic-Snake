@@ -86,10 +86,12 @@ function renderShell(): void {
 
       <section class="section" id="live">
         <p class="section-label">Live demo</p>
-        <h2>Six generations at once</h2>
+        <h2>Ten generations at once</h2>
         <p>
-          Each tile replays the best snake saved for that generation on the grid size it was
-          trained on. Use the controls below to pause or speed up all boards together. Click a
+          Ten checkpoints in chronological order — two rows of five — from the first evolved rays
+          through 10×10 mastery to the final 20×20 win. Each tile replays the full saved run.
+          Use the controls to pause or speed up playback — try 20× or 50× for long 20×20 games.
+          Each board shows an end screen when its run finishes, then restarts on its own. Click a
           tile to inspect it in the featured player.
         </p>
         <div class="demo-controls">
@@ -100,6 +102,8 @@ function renderShell(): void {
               <option value="1">1×</option>
               <option value="3" selected>3×</option>
               <option value="10">10×</option>
+              <option value="20">20×</option>
+              <option value="50">50×</option>
             </select>
           </label>
         </div>

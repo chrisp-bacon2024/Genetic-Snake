@@ -228,8 +228,14 @@
 
 .grid-demo {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .grid-demo {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .demo-tile {

@@ -13,7 +13,7 @@ export function renderResults(container: HTMLElement, metrics: MetricRow[]): voi
     { label: "Winning runs logged", value: String(wins) },
   ];
 
-  const highlightRows = [0, 10, 50, 100, 150, 215]
+  const highlightRows = [0, 10, 50, 100, 135, 150, 160, 176, 199, 215]
     .map((generation) => metrics.find((row) => row.generation === generation))
     .filter((row): row is MetricRow => row !== undefined);
 

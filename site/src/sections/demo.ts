@@ -9,6 +9,7 @@ interface DemoTile {
   renderer: BoardRenderer;
   player: ReplayPlayer;
   root: HTMLElement;
+  restartTimeout: number;
 }
 
 const END_HOLD_MS = 2500;
@@ -24,8 +25,7 @@ export class DemoSection {
   private playing = true;
   private speed = 1;
   private activeGeneration = 215;
-  private finishedCount = 0;
-  private restartTimeout = 0;
+  private featuredRestartTimeout = 0;
 
   constructor(
     private readonly manifest: SiteManifest,
@@ -45,11 +45,12 @@ export class DemoSection {
     this.featuredRenderer = new BoardRenderer(featuredBoard, 20, 20);
     this.activeGeneration = manifest.default_featured_generation;
 
-    this.featuredPlayer.setLoop(true);
+    this.featuredPlayer.setLoop(false);
     this.featuredPlayer.onFrame((frame) => {
       this.featuredRenderer.draw(frame, { showRays: true });
       this.renderOutputs(frame);
     });
+    this.featuredPlayer.onComplete(() => this.scheduleFeaturedRestart());
 
     controls.playButton.addEventListener("click", () => {
       this.playing = !this.playing;
@@ -92,37 +93,44 @@ export class DemoSection {
     player.setLoop(false);
     await player.load(entry.path);
     player.onFrame((frame) => renderer.draw(frame));
-    player.onComplete(() => this.handleTileComplete());
+
+    const tile: DemoTile = {
+      entry,
+      canvas,
+      renderer,
+      player,
+      root,
+      restartTimeout: 0,
+    };
+    player.onComplete(() => this.scheduleTileRestart(tile));
 
     root.addEventListener("click", () => {
       void this.selectFeatured(entry.generation);
     });
 
     this.gridRoot.appendChild(root);
-    this.tiles.push({ entry, canvas, renderer, player, root });
+    this.tiles.push(tile);
     player.startLoop();
   }
 
-  private handleTileComplete(): void {
-    this.finishedCount += 1;
-    if (this.finishedCount < this.tiles.length) {
-      return;
-    }
-    window.clearTimeout(this.restartTimeout);
-    this.restartTimeout = window.setTimeout(() => {
+  private scheduleTileRestart(tile: DemoTile): void {
+    window.clearTimeout(tile.restartTimeout);
+    tile.restartTimeout = window.setTimeout(() => {
       if (!this.playing) {
         return;
       }
-      this.restartGrid();
+      tile.player.restart();
     }, END_HOLD_MS);
   }
 
-  private restartGrid(): void {
-    this.finishedCount = 0;
-    window.clearTimeout(this.restartTimeout);
-    for (const tile of this.tiles) {
-      tile.player.restart();
-    }
+  private scheduleFeaturedRestart(): void {
+    window.clearTimeout(this.featuredRestartTimeout);
+    this.featuredRestartTimeout = window.setTimeout(() => {
+      if (!this.playing) {
+        return;
+      }
+      this.featuredPlayer.restart();
+    }, END_HOLD_MS);
   }
 
   private async selectFeatured(generation: number): Promise<void> {
@@ -142,12 +150,14 @@ export class DemoSection {
       );
     if (!entry) return;
 
+    window.clearTimeout(this.featuredRestartTimeout);
     this.featuredRenderer.resize(entry.grid_cols, entry.grid_rows);
     this.featuredBoard.width = Math.max(this.featuredBoard.width, entry.grid_cols * 18 + 16);
     this.featuredBoard.height = Math.max(this.featuredBoard.height, entry.grid_rows * 18 + 32);
     this.featuredRenderer.resize(entry.grid_cols, entry.grid_rows);
 
-    this.featuredMeta.textContent = `Generation ${entry.generation} · score ${entry.score} · ${entry.grid_cols}×${entry.grid_rows} · died: ${entry.death_cause}`;
+    const durationSec = Math.ceil(entry.frame_count / entry.ticks_per_second);
+    this.featuredMeta.textContent = `Generation ${entry.generation} · score ${entry.score} · ${entry.grid_cols}×${entry.grid_rows} · ${entry.frame_count} frames (~${durationSec}s at 1×) · died: ${entry.death_cause}`;
 
     this.featuredPlayer.stopLoop();
     await this.featuredPlayer.load(entry.path);
@@ -186,21 +196,28 @@ export class DemoSection {
 
   private syncPlayback(): void {
     if (this.playing) {
-      const allFinished = this.tiles.length > 0 && this.tiles.every((tile) => tile.player.isFinished);
-      if (allFinished) {
-        this.restartGrid();
-      } else {
-        for (const tile of this.tiles) {
+      for (const tile of this.tiles) {
+        if (tile.player.isFinished) {
+          tile.player.restart();
+        } else {
           tile.player.setPlaying(true);
         }
+        window.clearTimeout(tile.restartTimeout);
       }
-      window.clearTimeout(this.restartTimeout);
+      window.clearTimeout(this.featuredRestartTimeout);
+      if (this.featuredPlayer.isFinished) {
+        this.featuredPlayer.restart();
+      } else {
+        this.featuredPlayer.setPlaying(true);
+      }
     } else {
       for (const tile of this.tiles) {
         tile.player.setPlaying(false);
+        window.clearTimeout(tile.restartTimeout);
       }
+      window.clearTimeout(this.featuredRestartTimeout);
+      this.featuredPlayer.setPlaying(false);
     }
-    this.featuredPlayer.setPlaying(this.playing);
   }
 
   private syncSpeed(): void {

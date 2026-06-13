@@ -21,12 +21,12 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
 DEFAULT_OUTPUT = REPO_ROOT / "site" / "public" / "data"
-DEFAULT_GRID_GENERATIONS = [0, 10, 50, 100, 150, 215]
+DEFAULT_GRID_GENERATIONS = [0, 10, 50, 100, 135, 150, 160, 176, 199, 215]
 DEFAULT_FEATURED_GENERATIONS = [0, 215]
 DEFAULT_LITE_MAX_TICKS = 0
 DEFAULT_GRID_MAX_TICKS: dict[int, int] = {}
-DEFAULT_GRID_TAIL_FRAMES = {215: 250}
-DEFAULT_FEATURED_MAX_TICKS = {215: 800}
+DEFAULT_GRID_TAIL_FRAMES: dict[int, int] = {}
+DEFAULT_FEATURED_MAX_TICKS: dict[int, int] = {}
 
 
 def _ensure_src_path() -> None:
@@ -160,10 +160,14 @@ def _export_replays(
 def _narrative_for_generation(generation: int) -> str:
     narratives = {
         0: "Untrained population baseline",
-        10: "Early learning",
-        50: "Plateau on small board",
-        100: "Mastery before curriculum advance",
-        150: "Curriculum jump to 10×10",
+        10: "Early learning on 5×5",
+        50: "Plateau on the small board",
+        100: "5×5 mastered — consistent wins",
+        135: "Curriculum advance — first steps on 10×10",
+        150: "Still adapting to the larger grid",
+        160: "10×10 progress — longer survival",
+        176: "10×10 mastered — board cleared",
+        199: "Learning 20×20 — first big-board run",
         215: "Full-board win on 20×20",
     }
     return narratives.get(generation, f"Generation {generation}")
