@@ -1,0 +1,389 @@
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: rgba(18, 18, 24, 0.92);
+  border-bottom: 1px solid rgb(40, 40, 52);
+  backdrop-filter: blur(8px);
+}
+
+.site-header nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.site-header nav a {
+  color: rgb(160, 160, 180);
+}
+
+.site-header nav a:hover {
+  color: rgb(220, 220, 230);
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.section {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+}
+
+.section-label {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(100, 200, 255);
+}
+
+.section h2 {
+  margin: 0 0 1rem;
+  font-size: clamp(1.75rem, 4vw, 2.4rem);
+  line-height: 1.15;
+}
+
+.section p,
+.section li {
+  color: rgb(180, 180, 195);
+}
+
+.hero {
+  padding-top: 5rem;
+  padding-bottom: 3rem;
+}
+
+.hero h1 {
+  margin: 0 0 1rem;
+  font-size: clamp(2.2rem, 6vw, 3.5rem);
+  line-height: 1.05;
+  max-width: 14ch;
+}
+
+.hero-lead {
+  max-width: 52ch;
+  font-size: 1.15rem;
+  color: rgb(180, 180, 195);
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.65rem 1.1rem;
+  border-radius: 8px;
+  border: 1px solid rgb(70, 70, 90);
+  background: rgb(32, 32, 42);
+  color: rgb(220, 220, 230);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:hover {
+  border-color: rgb(100, 200, 255);
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: rgb(38, 118, 72);
+  border-color: rgb(72, 180, 118);
+}
+
+.btn-primary:hover {
+  background: rgb(48, 138, 88);
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+  margin-top: 2.5rem;
+}
+
+.stat-card {
+  padding: 1rem 1.1rem;
+  border: 1px solid rgb(40, 40, 52);
+  border-radius: 10px;
+  background: rgb(24, 24, 32);
+}
+
+.stat-card strong {
+  display: block;
+  font-size: 1.5rem;
+  color: rgb(220, 220, 230);
+}
+
+.stat-card span {
+  font-size: 0.85rem;
+  color: rgb(120, 120, 140);
+}
+
+.timeline {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: 4rem 1fr;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border-left: 3px solid rgb(38, 118, 72);
+  background: rgb(24, 24, 32);
+  border-radius: 0 10px 10px 0;
+}
+
+.timeline-item h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.timeline-step {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.8rem;
+  color: rgb(100, 200, 255);
+}
+
+.arch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.arch-card {
+  padding: 1.2rem;
+  border: 1px solid rgb(40, 40, 52);
+  border-radius: 10px;
+  background: rgb(24, 24, 32);
+}
+
+.arch-card h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.flow-diagram {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border-radius: 10px;
+  background: rgb(24, 24, 32);
+  border: 1px solid rgb(40, 40, 52);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.85rem;
+  line-height: 1.8;
+  overflow-x: auto;
+  white-space: pre;
+  color: rgb(180, 180, 195);
+}
+
+.demo-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+}
+
+.demo-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: rgb(160, 160, 180);
+}
+
+.demo-controls select,
+.demo-controls button {
+  font: inherit;
+}
+
+.speed-select {
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid rgb(70, 70, 90);
+  background: rgb(32, 32, 42);
+  color: rgb(220, 220, 230);
+}
+
+.grid-demo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.demo-tile {
+  padding: 0.75rem;
+  border: 1px solid rgb(40, 40, 52);
+  border-radius: 10px;
+  background: rgb(24, 24, 32);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.demo-tile:hover,
+.demo-tile.active {
+  border-color: rgb(100, 200, 255);
+}
+
+.demo-tile:focus-visible {
+  outline: 2px solid rgb(100, 200, 255);
+  outline-offset: 2px;
+}
+
+.demo-tile-meta {
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+  color: rgb(160, 160, 180);
+}
+
+.demo-tile-meta strong {
+  display: block;
+  color: rgb(220, 220, 230);
+  font-size: 0.95rem;
+}
+
+.demo-tile canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.featured-demo {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(220px, 0.8fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 800px) {
+  .featured-demo {
+    grid-template-columns: 1fr;
+  }
+}
+
+.featured-board-wrap,
+.featured-side {
+  padding: 1rem;
+  border: 1px solid rgb(40, 40, 52);
+  border-radius: 10px;
+  background: rgb(24, 24, 32);
+}
+
+.featured-board-wrap canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.featured-meta {
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.output-panel h4,
+.featured-side h4 {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgb(120, 120, 140);
+}
+
+.output-bars {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.output-row {
+  display: grid;
+  grid-template-columns: 3rem 1fr 2.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.75rem;
+}
+
+.output-row.active {
+  color: rgb(100, 200, 255);
+}
+
+.output-bar-track {
+  height: 8px;
+  border-radius: 4px;
+  background: rgb(40, 40, 52);
+  overflow: hidden;
+}
+
+.output-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: rgb(100, 200, 255);
+}
+
+.results-chart {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 1.5rem;
+  border-radius: 10px;
+  border: 1px solid rgb(40, 40, 52);
+}
+
+.results-table-wrap {
+  overflow-x: auto;
+  margin-top: 1.5rem;
+}
+
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.results-table th,
+.results-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid rgb(40, 40, 52);
+  text-align: left;
+}
+
+.results-table th {
+  color: rgb(120, 120, 140);
+  font-weight: 600;
+}
+
+.site-footer {
+  padding: 2rem 1.5rem 3rem;
+  border-top: 1px solid rgb(40, 40, 52);
+  text-align: center;
+  color: rgb(120, 120, 140);
+  font-size: 0.9rem;
+}
+
+.site-footer p {
+  max-width: 640px;
+  margin: 0.5rem auto;
+}

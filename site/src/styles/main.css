@@ -1,0 +1,33 @@
+@import "./layout.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  background: rgb(18, 18, 24);
+  color: rgb(220, 220, 230);
+  line-height: 1.6;
+}
+
+a {
+  color: rgb(100, 200, 255);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code,
+.mono {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}

@@ -25,7 +25,6 @@ class ReplayFrame:
     direction: Direction
     inputs: np.ndarray
     hidden_layers: tuple[np.ndarray, ...]
-    rnn_hidden: np.ndarray | None = None
     outputs: np.ndarray
     snake: tuple[tuple[int, int], ...]
     food: tuple[int, int]
@@ -33,6 +32,7 @@ class ReplayFrame:
     alive: bool
     ate_food: bool
     died: bool
+    rnn_hidden: np.ndarray | None = None
     starved: bool = False
 
     def to_dict(self) -> dict:

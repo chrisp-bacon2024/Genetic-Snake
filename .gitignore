@@ -18,3 +18,7 @@ Thumbs.db
 
 # Recorded game replays
 replays/
+
+# Site build artifacts
+site/node_modules/
+site/dist/

@@ -215,6 +215,7 @@ def plot_analysis(
             "wall": "#f58518",
             "starved": "#72b7b2",
             "timeout": "#4c78a8",
+            "win": "#54a24b",
         }
         for cause in ("body", "wall", "starved", "timeout", "win"):
             ax_cause.plot(
