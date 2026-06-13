@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import csv
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,12 +25,14 @@ import numpy as np
 
 import config
 from evolution.genome import Genome
+from evolution.training_log import load_training_history
+from evolution.training_metrics import GenerationMetrics
 from game.game_state import DeathCause
-
-DEATH_CAUSES: tuple[DeathCause, ...] = ("body", "wall", "starved", "win")
 from models.grid import Grid
 from neural.network import NeuralNetwork
 from simulation.headless import HeadlessSimulator, Scenario
+
+DEATH_CAUSES: tuple[DeathCause, ...] = ("body", "wall", "starved", "win")
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,10 +69,7 @@ def load_records(replays_dir: Path, *, resim: bool) -> list[GenerationRecord]:
         death_cause: DeathCause | None = None
         if "death_cause" in data:
             raw = str(data["death_cause"])
-            if raw == "timeout":
-                raw = "starved"
-            if raw in DEATH_CAUSES:
-                death_cause = raw  # type: ignore[assignment]
+            death_cause = _normalize_death_cause(raw)
 
         resim_score: int | None = None
         if resim and death_cause is None:
@@ -149,34 +149,80 @@ def _death_cause_colors() -> dict[str, str]:
     }
 
 
+def _normalize_death_cause(raw: str) -> DeathCause | None:
+    if raw == "timeout":
+        raw = "starved"
+    if raw in DEATH_CAUSES:
+        return raw  # type: ignore[return-value]
+    return None
+
+
+def _population_death_fractions(metric: GenerationMetrics) -> dict[str, float]:
+    """Per-cause share of the population for one generation (sums to 1)."""
+    if metric.population_death_causes:
+        counts: Counter[str] = Counter()
+        for raw in metric.population_death_causes:
+            cause = _normalize_death_cause(str(raw))
+            if cause is not None:
+                counts[cause] += 1
+        total = sum(counts.values())
+    else:
+        cause = _normalize_death_cause(metric.death_cause)
+        counts = Counter([cause] if cause is not None else [])
+        total = sum(counts.values())
+    if total <= 0:
+        return dict.fromkeys(DEATH_CAUSES, 0.0)
+    return {cause: counts.get(cause, 0) / total for cause in DEATH_CAUSES}
+
+
+def _metrics_for_records(
+    records: list[GenerationRecord],
+    metrics: list[GenerationMetrics],
+) -> list[GenerationMetrics]:
+    by_generation = {metric.generation: metric for metric in metrics}
+    aligned: list[GenerationMetrics] = []
+    for record in records:
+        metric = by_generation.get(record.generation)
+        if metric is not None:
+            aligned.append(metric)
+    return aligned
+
+
 def _plot_death_cause_bars(
     ax,
-    records: list[GenerationRecord],
+    metrics: list[GenerationMetrics],
     generations: np.ndarray,
 ) -> None:
     from matplotlib.patches import Patch
 
+    if not metrics:
+        return
+
     colors = _death_cause_colors()
     width = _bar_width(generations)
+    gens = [metric.generation for metric in metrics]
+    bottom = [0.0] * len(metrics)
     present_causes: set[str] = set()
 
-    for record in records:
-        if record.death_cause is None:
+    for cause in DEATH_CAUSES:
+        fracs = [_population_death_fractions(metric)[cause] for metric in metrics]
+        if not any(frac > 0 for frac in fracs):
             continue
-        present_causes.add(record.death_cause)
+        present_causes.add(cause)
         ax.bar(
-            record.generation,
-            1.0,
+            gens,
+            fracs,
             width=width,
-            color=colors[record.death_cause],
+            bottom=bottom,
+            color=colors[cause],
             align="center",
             edgecolor="none",
         )
+        bottom = [base + frac for base, frac in zip(bottom, fracs)]
 
     ax.set_ylim(0.0, 1.05)
-    ax.set_yticks([])
-    ax.set_ylabel("Best-run outcome")
-    ax.grid(True, alpha=0.25, axis="x")
+    ax.set_ylabel("Population outcome share")
+    ax.grid(True, alpha=0.25, axis="y")
 
     handles = [
         Patch(facecolor=colors[cause], label=cause)
@@ -184,10 +230,11 @@ def _plot_death_cause_bars(
         if cause in present_causes
     ]
     if handles:
-        ax.legend(handles=handles, loc="upper right", ncol=min(5, len(handles)), fontsize=9)
+        ax.legend(handles=handles, loc="upper right", ncol=min(4, len(handles)), fontsize=9)
 
 def plot_analysis(
     records: list[GenerationRecord],
+    metrics: list[GenerationMetrics],
     *,
     output: Path | None,
     show: bool,
@@ -205,7 +252,8 @@ def plot_analysis(
     best_ever = np.maximum.accumulate(scores)
     rolling = _rolling_mean(scores.astype(np.float64), window)
 
-    has_causes = any(record.death_cause is not None for record in records)
+    bar_metrics = _metrics_for_records(records, metrics)
+    has_causes = bool(bar_metrics)
     figure_height = 10 if has_causes else 7
     fig, axes = plt.subplots(3 if has_causes else 2, 1, figsize=(12, figure_height), sharex=True)
     if not isinstance(axes, np.ndarray):
@@ -238,21 +286,28 @@ def plot_analysis(
         f"Final rolling avg: {rolling[-1]:.1f}",
     ]
     if has_causes:
-        cause_totals = {
-            cause: sum(1 for record in records if record.death_cause == cause)
-            for cause in DEATH_CAUSES
-        }
-        dominant = max(cause_totals, key=cause_totals.get)
+        population_totals: Counter[str] = Counter()
+        for metric in bar_metrics:
+            if metric.population_death_causes:
+                for raw in metric.population_death_causes:
+                    cause = _normalize_death_cause(str(raw))
+                    if cause is not None:
+                        population_totals[cause] += 1
+            else:
+                cause = _normalize_death_cause(metric.death_cause)
+                if cause is not None:
+                    population_totals[cause] += 1
+        dominant = max(population_totals, key=population_totals.get)
         summary_lines.append(
-            "Death causes: "
-            + ", ".join(f"{name} {cause_totals[name]}" for name in cause_totals)
+            "Population outcomes: "
+            + ", ".join(f"{name} {population_totals[name]}" for name in DEATH_CAUSES if population_totals[name])
             + f" (dominant: {dominant})"
         )
     fig.text(0.12, 0.02, "  ·  ".join(summary_lines), fontsize=10, color="#444")
 
     if has_causes:
         ax_cause = axes[2]
-        _plot_death_cause_bars(ax_cause, records, generations)
+        _plot_death_cause_bars(ax_cause, bar_metrics, generations)
         ax_cause.set_xlabel("Generation")
     else:
         ax_best.set_xlabel("Generation")
@@ -272,7 +327,12 @@ def plot_analysis(
         plt.close(fig)
 
 
-def print_summary(records: list[GenerationRecord], *, window: int) -> None:
+def print_summary(
+    records: list[GenerationRecord],
+    metrics: list[GenerationMetrics],
+    *,
+    window: int,
+) -> None:
     scores = [record.score for record in records]
     best_ever = 0
     milestones = {5: None, 10: None, 15: None, 20: None, 23: None, 24: None}
@@ -299,13 +359,21 @@ def print_summary(records: list[GenerationRecord], *, window: int) -> None:
     print(f"Last {window}-gen avg best score: {sum(recent) / len(recent):.1f}")
     print(f"Last {window}-gen max best score: {max(recent)}")
 
-    if any(record.death_cause is not None for record in records):
-        tail = records[-window:]
-        counts = {
-            cause: sum(1 for record in tail if record.death_cause == cause)
-            for cause in DEATH_CAUSES
-        }
-        print(f"Last {window}-gen death causes (best snake): {counts}")
+    bar_metrics = _metrics_for_records(records, metrics)
+    if bar_metrics:
+        tail = bar_metrics[-window:]
+        counts: Counter[str] = Counter()
+        for metric in tail:
+            if metric.population_death_causes:
+                for raw in metric.population_death_causes:
+                    cause = _normalize_death_cause(str(raw))
+                    if cause is not None:
+                        counts[cause] += 1
+            else:
+                cause = _normalize_death_cause(metric.death_cause)
+                if cause is not None:
+                    counts[cause] += 1
+        print(f"Last {window}-gen population outcomes: {dict(counts)}")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -361,14 +429,16 @@ def main(argv: list[str] | None = None) -> None:
     if resim:
         print("Re-simulating saved best runs for death causes (may take a minute)…", flush=True)
     records = load_records(replays_dir, resim=resim)
+    metrics = load_training_history(replays_dir)
 
     write_csv(args.csv, records)
     print(f"Wrote CSV to {args.csv.resolve()}", flush=True)
-    print_summary(records, window=args.window)
+    print_summary(records, metrics, window=args.window)
 
     if not args.no_plot:
         plot_analysis(
             records,
+            metrics,
             output=None if args.show else args.output,
             show=args.show,
             window=args.window,

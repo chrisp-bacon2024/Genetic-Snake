@@ -30,7 +30,7 @@ export function renderResults(container: HTMLElement, metrics: MetricRow[]): voi
         )
         .join("")}
     </div>
-    <img class="results-chart" src="data/training_chart.png" alt="Training progress chart with score by generation and per-generation death outcomes" />
+    <img class="results-chart" src="data/training_chart.png" alt="Training progress chart with score by generation and population death outcomes" />
     <div class="results-table-wrap">
       <table class="results-table">
         <thead>
