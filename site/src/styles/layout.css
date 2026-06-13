@@ -309,6 +309,13 @@
   font-size: 0.9rem;
 }
 
+.featured-side canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
 .output-panel h4,
 .featured-side h4 {
   margin: 0 0 0.75rem;

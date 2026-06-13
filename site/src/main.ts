@@ -114,15 +114,18 @@ function renderShell(): void {
         <p class="section-label">Featured run</p>
         <h2>Vision rays and network outputs</h2>
         <p id="featured-intro">
-          The featured player shows heading-relative vision rays and the four direction logits
-          chosen each tick. Full neural activations are included in the exported replay JSON.
+          The featured player shows heading-relative vision rays and a live neural-network panel
+          matching the pygame app: input rays, feature groups, hidden activations, and output
+          arrows for the chosen move.
         </p>
         <div class="featured-demo">
           <div class="featured-board-wrap">
             <div class="featured-meta" id="featured-meta"></div>
             <canvas id="featured-board"></canvas>
           </div>
-          <div class="featured-side output-panel" id="output-panel"></div>
+          <div class="featured-side">
+            <canvas id="network-panel"></canvas>
+          </div>
         </div>
       </section>
 
@@ -159,7 +162,7 @@ async function bootstrap(): Promise<void> {
     document.getElementById("grid-demo")!,
     document.getElementById("featured-board") as HTMLCanvasElement,
     document.getElementById("featured-meta")!,
-    document.getElementById("output-panel")!,
+    document.getElementById("network-panel") as HTMLCanvasElement,
     {
       playButton: document.getElementById("demo-play") as HTMLButtonElement,
       speedSelect: document.getElementById("demo-speed") as HTMLSelectElement,

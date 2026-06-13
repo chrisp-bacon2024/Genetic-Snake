@@ -1,7 +1,7 @@
 import { BoardRenderer } from "../replay/BoardRenderer";
+import { NetworkVisualizer } from "../replay/NetworkVisualizer";
 import { ReplayPlayer } from "../replay/ReplayPlayer";
-import type { GenerationEntry, LiteReplayFrame, SiteManifest } from "../replay/types";
-import { OUTPUT_LABELS } from "../replay/types";
+import type { GenerationEntry, SiteManifest } from "../replay/types";
 
 interface DemoTile {
   entry: GenerationEntry;
@@ -16,10 +16,10 @@ const END_HOLD_MS = 2500;
 
 export class DemoSection {
   private readonly gridRoot: HTMLElement;
-  private readonly featuredBoard: HTMLCanvasElement;
   private readonly featuredMeta: HTMLElement;
-  private readonly outputPanel: HTMLElement;
+  private readonly networkPanel: HTMLCanvasElement;
   private readonly featuredRenderer: BoardRenderer;
+  private readonly networkVisualizer: NetworkVisualizer;
   private readonly featuredPlayer = new ReplayPlayer();
   private tiles: DemoTile[] = [];
   private playing = true;
@@ -32,23 +32,23 @@ export class DemoSection {
     gridRoot: HTMLElement,
     featuredBoard: HTMLCanvasElement,
     featuredMeta: HTMLElement,
-    outputPanel: HTMLElement,
+    networkPanel: HTMLCanvasElement,
     controls: {
       playButton: HTMLButtonElement;
       speedSelect: HTMLSelectElement;
     },
   ) {
     this.gridRoot = gridRoot;
-    this.featuredBoard = featuredBoard;
     this.featuredMeta = featuredMeta;
-    this.outputPanel = outputPanel;
-    this.featuredRenderer = new BoardRenderer(featuredBoard, 20, 20);
+    this.networkPanel = networkPanel;
+    this.featuredRenderer = new BoardRenderer(featuredBoard, 20, 20, 380);
+    this.networkVisualizer = new NetworkVisualizer(networkPanel);
     this.activeGeneration = manifest.default_featured_generation;
 
     this.featuredPlayer.setLoop(false);
     this.featuredPlayer.onFrame((frame) => {
       this.featuredRenderer.draw(frame, { showRays: true });
-      this.renderOutputs(frame);
+      this.networkVisualizer.draw(frame);
     });
     this.featuredPlayer.onComplete(() => this.scheduleFeaturedRestart());
 
@@ -65,6 +65,7 @@ export class DemoSection {
   }
 
   async init(): Promise<void> {
+    this.networkVisualizer.resize(this.networkPanel.clientWidth || 280);
     await Promise.all(this.manifest.grid_generations.map((entry) => this.createTile(entry)));
     this.syncSpeed();
     this.syncPlayback();
@@ -113,6 +114,20 @@ export class DemoSection {
     player.startLoop();
   }
 
+  private findFeaturedEntry(generation: number): GenerationEntry | undefined {
+    return (
+      this.manifest.featured_generations.find((item) => item.generation === generation) ??
+      this.manifest.grid_generations.find((item) => item.generation === generation)
+    );
+  }
+
+  private featuredReplayPath(entry: GenerationEntry): string {
+    if (!entry.lite) {
+      return entry.path;
+    }
+    return entry.path.replace("_lite.json", "_full.json");
+  }
+
   private scheduleTileRestart(tile: DemoTile): void {
     window.clearTimeout(tile.restartTimeout);
     tile.restartTimeout = window.setTimeout(() => {
@@ -143,55 +158,21 @@ export class DemoSection {
   }
 
   private async loadFeatured(generation: number): Promise<void> {
-    const entry =
-      this.manifest.featured_generations.find((item) => item.generation === generation) ??
-      this.manifest.featured_generations.find(
-        (item) => item.generation === this.manifest.default_featured_generation,
-      );
+    const entry = this.findFeaturedEntry(generation);
     if (!entry) return;
 
     window.clearTimeout(this.featuredRestartTimeout);
-    this.featuredRenderer.resize(entry.grid_cols, entry.grid_rows);
-    this.featuredBoard.width = Math.max(this.featuredBoard.width, entry.grid_cols * 18 + 16);
-    this.featuredBoard.height = Math.max(this.featuredBoard.height, entry.grid_rows * 18 + 32);
-    this.featuredRenderer.resize(entry.grid_cols, entry.grid_rows);
+    this.featuredRenderer.resize(entry.grid_cols, entry.grid_rows, 380);
+    this.networkVisualizer.resize(this.networkPanel.clientWidth || 280);
 
     const durationSec = Math.ceil(entry.frame_count / entry.ticks_per_second);
     this.featuredMeta.textContent = `Generation ${entry.generation} · score ${entry.score} · ${entry.grid_cols}×${entry.grid_rows} · ${entry.frame_count} frames (~${durationSec}s at 1×) · died: ${entry.death_cause}`;
 
     this.featuredPlayer.stopLoop();
-    await this.featuredPlayer.load(entry.path);
+    await this.featuredPlayer.load(this.featuredReplayPath(entry));
     this.featuredPlayer.setSpeed(this.speed);
     this.featuredPlayer.setPlaying(this.playing);
     this.featuredPlayer.startLoop();
-  }
-
-  private renderOutputs(frame: LiteReplayFrame): void {
-    const outputs = frame.outputs ?? [0, 0, 0, 0];
-    const max = Math.max(...outputs, 0.001);
-    const chosen = frame.direction;
-
-    this.outputPanel.innerHTML = `
-      <h4>Network outputs</h4>
-      <div class="output-bars">
-        ${OUTPUT_LABELS.map((label, index) => {
-          const active = label === chosen;
-          const width = Math.max(4, (outputs[index] / max) * 100);
-          return `
-            <div class="output-row${active ? " active" : ""}">
-              <span>${label}</span>
-              <div class="output-bar-track">
-                <div class="output-bar-fill" style="width:${width}%"></div>
-              </div>
-              <span>${outputs[index].toFixed(2)}</span>
-            </div>
-          `;
-        }).join("")}
-      </div>
-      <p style="margin-top:0.75rem;color:rgb(160,160,180);font-size:0.85rem">
-        Chosen move: <span class="mono">${chosen}</span>
-      </p>
-    `;
   }
 
   private syncPlayback(): void {
