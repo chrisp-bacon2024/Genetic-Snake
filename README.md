@@ -4,8 +4,9 @@ Snake controlled by a small neural network, trained with a genetic algorithm —
 
 ## Demo
 
-<!-- Replace docs/snake-gameplay.gif with your recording -->
-![Genetic Snake running](docs/snake-gameplay.gif)
+<video src="docs/snake-gameplay-readme.mp4" controls autoplay muted loop width="100%"></video>
+
+*Generation 215 replay — board, vision rays, and live neural panel from the portfolio site.*
 
 **Live portfolio site:** [chrisp-bacon2024.github.io/Genetic-Snake](https://chrisp-bacon2024.github.io/Genetic-Snake/) — replay demos, training chart, and architecture walkthrough. Local dev: [`site/README.md`](site/README.md).
 
@@ -144,7 +145,7 @@ scripts/export_site_data.py   NPZ replays → site JSON + chart
 tests/
   test_game_win.py        Win detection smoke tests
 docs/
-  snake-gameplay.gif      ← add your gameplay GIF here
+  snake-gameplay-readme.mp4   Compressed demo video (README)
 ```
 
 ---

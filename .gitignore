@@ -22,3 +22,7 @@ replays/
 # Site build artifacts
 site/node_modules/
 site/dist/
+
+# Large local recordings (use snake-gameplay-readme.mp4 in repo)
+docs/snake-gameplay.gif
+docs/snake-gameplay.mp4
