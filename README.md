@@ -1,8 +1,13 @@
 # Genetic Snake
 
-Snake controlled by a small neural network, trained with a genetic algorithm. The pygame app shows the board and a live network panel; headless training evolves populations on configurable grid sizes with curriculum learning.
+Snake controlled by a small neural network, trained with a genetic algorithm — no backpropagation, no labeled moves. The pygame app shows the board, heading-relative vision rays, and a live network panel; headless training evolves populations on configurable grid sizes with curriculum learning.
 
-**Portfolio demo site:** [chrisp-bacon2024.github.io/Genetic-Snake](https://chrisp-bacon2024.github.io/Genetic-Snake/) — local dev in [`site/README.md`](site/README.md) (`cd site && npm install && npm run dev`).
+## Demo
+
+<!-- Replace docs/snake-gameplay.gif with your recording -->
+![Genetic Snake running](docs/snake-gameplay.gif)
+
+**Live portfolio site:** [chrisp-bacon2024.github.io/Genetic-Snake](https://chrisp-bacon2024.github.io/Genetic-Snake/) — replay demos, training chart, and architecture walkthrough. Local dev: [`site/README.md`](site/README.md).
 
 ---
 
@@ -11,6 +16,7 @@ Snake controlled by a small neural network, trained with a genetic algorithm. Th
 ```bash
 python -m venv .venv
 .venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # macOS / Linux
 pip install -r requirements.txt
 ```
 
@@ -46,8 +52,8 @@ Architecture or encoder changes require a **fresh** training run (old checkpoint
 │  train.py          — GA loop, checkpoint/resume, curriculum   │
 │  HeadlessSimulator — fast eval (no pygame)                    │
 │  Game              — rules, scoring, win detection            │
-│  GameStateEncoder  — 43 ray/food/direction features           │
-│  NeuralNetwork     — MLP 43→32→4 (optional GRU in config)     │
+│  GameStateEncoder  — 44 ray/feature inputs                    │
+│  NeuralNetwork     — MLP 44→64→4 (optional GRU in config)     │
 │  Population        — tournament selection, SBX, mutation      │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -56,8 +62,8 @@ Architecture or encoder changes require a **fresh** training run (old checkpoint
 
 ### Per-tick flow (play or eval)
 
-1. `GameStateEncoder` builds a 43-dimensional state vector (8 rays × wall/food/body, food bearing, directions, lookahead, space).
-2. `NeuralNetwork` outputs 4 direction logits (masked for illegal moves).
+1. `GameStateEncoder` builds a 44-dimensional state vector (8 rays × wall/food/body, food cues, head/tail direction, lookahead, space metrics).
+2. `NeuralNetwork` outputs 4 direction logits (illegal moves masked before argmax).
 3. `Game.tick(direction)` moves the snake, updates score, detects wall/body/starvation/win.
 
 ---
@@ -95,17 +101,24 @@ cd src
 python analyze_training.py --show
 ```
 
+**Export data for the portfolio site:**
+
+```bash
+python scripts/export_site_data.py --replays-dir src/replays
+cd site && npm install && npm run dev
+```
+
 ---
 
 ## Neural network (default)
 
 | Layer | Size | Description |
 |-------|------|-------------|
-| Input | 43 | Ray vision, food, heading, lookahead, reachable space |
-| Hidden | 32 | ReLU (MLP) |
+| Input | 44 | Ray vision, food, heading, lookahead, reachable space |
+| Hidden | 64 | ReLU (MLP) |
 | Output | 4 | UP, DOWN, LEFT, RIGHT |
 
-Genome size: **~1,540** floats (`NeuralNetwork.genome_length()`). Set `NN_ARCH = "gru"` in `config.py` for recurrent mode (different gene count).
+Genome size: **~3,140** floats (`NeuralNetwork.genome_length()`). Set `NN_ARCH = "gru"` in `config.py` for recurrent mode (different gene count).
 
 ---
 
@@ -126,8 +139,13 @@ src/
   replay/                 Frame recorder (JSON, used by pygame app)
   ui/                     App, replay viewer, training dashboard
 
+site/                     Portfolio demo (Vite + TypeScript)
+scripts/export_site_data.py   NPZ replays → site JSON + chart
+
 tests/
   test_game_win.py        Win detection smoke tests
+docs/
+  snake-gameplay.gif      ← add your gameplay GIF here
 ```
 
 ---
