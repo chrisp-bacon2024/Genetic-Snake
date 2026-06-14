@@ -20,7 +20,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-**Play (pygame):**
+**Pygame demo (random AI):** launches the board, vision rays, and network panel with an **untrained random brain** — useful for debugging the UI, not for watching evolved snakes. Human keyboard control is not wired (`KeyboardController` is legacy only).
 
 ```bash
 cd src
@@ -32,13 +32,19 @@ python main.py
 | R | Restart (same brain unless `RESTART_NEW_GENOME` is True) |
 | Esc | Quit |
 
+**Watch trained snakes (pygame replay viewer):** needs `replays/gen_*.npz` from a training run.
+
+```bash
+cd src
+python train.py --watch-only
+```
+
 **Train (headless):**
 
 ```bash
 cd src
 python train.py --dashboard --generations 500 --population 500 --workers 0
 python train.py --resume --generations 200 --dashboard
-python train.py --watch-only
 ```
 
 Architecture or encoder changes require a **fresh** training run (old checkpoints are incompatible).
@@ -60,7 +66,7 @@ Architecture or encoder changes require a **fresh** training run (old checkpoint
 
 **Design:** Game logic, encoding, and neural math have **no pygame dependency**, so training reuses the same `Game`, encoder, and network as the visual app.
 
-### Per-tick flow (play or eval)
+### Per-tick flow (pygame demo or headless eval)
 
 1. `GameStateEncoder` builds a 44-dimensional state vector (8 rays × wall/food/body, food cues, head/tail direction, lookahead, space metrics).
 2. `NeuralNetwork` outputs 4 direction logits (illegal moves masked before argmax).
@@ -86,13 +92,6 @@ Architecture or encoder changes require a **fresh** training run (old checkpoint
 | `best.npz` / `best_score.npz` | Best by fitness / best score ever |
 | `checkpoint.npz` | Full population for `--resume` |
 | `training_log.jsonl` | Per-gen metrics for dashboard history |
-
-**Replay saved best snakes:**
-
-```bash
-cd src
-python train.py --watch-only
-```
 
 **Analyze training from replays:**
 
@@ -126,7 +125,7 @@ Genome size: **~3,140** floats (`NeuralNetwork.genome_length()`). Set `NN_ARCH =
 
 ```
 src/
-  main.py                 Pygame entry
+  main.py                 Pygame demo (random AI; not trained replays)
   train.py                GA training CLI
   config.py               Grid, GA, NN, curriculum constants
 
