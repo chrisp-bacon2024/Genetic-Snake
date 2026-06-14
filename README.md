@@ -4,7 +4,7 @@ Snake controlled by a small neural network, trained with a genetic algorithm —
 
 ## Demo
 
-<video src="docs/snake-gameplay-readme.mp4" controls autoplay muted loop width="100%"></video>
+![Gen 215 trained snake on the portfolio replay viewer](docs/snake-gameplay.gif)
 
 *Generation 215 replay — board, vision rays, and live neural panel from the portfolio site.*
 
@@ -145,7 +145,7 @@ scripts/export_site_data.py   NPZ replays → site JSON + chart
 tests/
   test_game_win.py        Win detection smoke tests
 docs/
-  snake-gameplay-readme.mp4   Compressed demo video (README)
+  snake-gameplay.gif          Portfolio replay recording (README demo)
 ```
 
 ---

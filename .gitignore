@@ -23,6 +23,6 @@ replays/
 site/node_modules/
 site/dist/
 
-# Large local recordings (use snake-gameplay-readme.mp4 in repo)
-docs/snake-gameplay.gif
+# Large local source recordings (README uses docs/snake-gameplay.gif)
 docs/snake-gameplay.mp4
+docs/snake-gameplay-1.gif
