@@ -22,14 +22,16 @@ function renderShell(): void {
   app.innerHTML = `
     <header class="site-header">
       <div class="brand">Genetic Snake</div>
-      <nav>
+      <!-- Links within this page only. The repository is linked from the
+           hero's "View source" button and the footer (and from the portfolio
+           bar's Source link when hosted on christophermpalmer.com). -->
+      <nav aria-label="On this page">
         <a href="#challenge">Challenge</a>
         <a href="#journey">Journey</a>
         <a href="#architecture">Architecture</a>
         <a href="#live">Live demo</a>
         <a href="#featured">Featured</a>
         <a href="#results">Results</a>
-        <a href="${REPO_URL}" target="_blank" rel="noreferrer">GitHub</a>
       </nav>
     </header>
 
