@@ -1,4 +1,5 @@
 import type { MetricRow } from "../replay/types";
+import { outcomeLabel } from "./outcome";
 
 export function renderResults(container: HTMLElement, metrics: MetricRow[]): void {
   const last = metrics[metrics.length - 1];
@@ -30,7 +31,10 @@ export function renderResults(container: HTMLElement, metrics: MetricRow[]): voi
         )
         .join("")}
     </div>
-    <img class="results-chart" src="data/training_chart.png" alt="Training progress chart with score by generation and population death outcomes" />
+    <a class="results-chart-link" href="data/training_chart.png" target="_blank" rel="noreferrer">
+      <img class="results-chart" src="data/training_chart.png" alt="Training progress chart with score by generation and population death outcomes" />
+      <span class="results-chart-hint">Open the chart full size</span>
+    </a>
     <div class="results-table-wrap">
       <table class="results-table">
         <thead>
@@ -51,7 +55,7 @@ export function renderResults(container: HTMLElement, metrics: MetricRow[]): voi
                   <td>${row.grid_cols}×${row.grid_rows}</td>
                   <td>${row.best_score}</td>
                   <td>${row.best_ever_score}</td>
-                  <td>${row.death_cause}</td>
+                  <td>${outcomeLabel(row.death_cause)}</td>
                 </tr>
               `,
             )
@@ -61,7 +65,7 @@ export function renderResults(container: HTMLElement, metrics: MetricRow[]): voi
     </div>
     ${
       firstWin
-        ? `<p style="margin-top:1rem">First logged win at generation ${firstWin.generation} on a ${firstWin.grid_cols}×${firstWin.grid_rows} board.</p>`
+        ? `<p class="results-note">First logged win at generation ${firstWin.generation} on a ${firstWin.grid_cols}×${firstWin.grid_rows} board.</p>`
         : ""
     }
   `;

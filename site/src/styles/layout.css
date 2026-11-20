@@ -157,6 +157,8 @@
   line-height: var(--leading-tight);
   color: var(--color-heading);
   font-variant-numeric: tabular-nums;
+  /* "44 → 64 → 4" must never break across lines. */
+  white-space: nowrap;
 }
 
 .stat-card span {
@@ -202,6 +204,16 @@
   letter-spacing: var(--tracking-section);
   color: var(--color-label);
   font-variant-numeric: tabular-nums;
+}
+
+/* "Step" is only shown on phones, where the number sits above the title. */
+.timeline-step-word {
+  display: none;
+}
+
+/* "Show all 12 steps": phones only (see the small-screen rules). */
+.timeline-toggle {
+  display: none;
 }
 
 .timeline-stat {
@@ -266,6 +278,10 @@
 
 /* Each tile is a button: a card that lifts on hover, like portfolio cards. */
 .demo-tile {
+  /* Column, with the board pushed to the bottom, so boards line up across
+     tiles whose descriptions have different lengths. */
+  display: flex;
+  flex-direction: column;
   padding: var(--space-3);
   font: inherit;
   text-align: left;
@@ -307,7 +323,27 @@
   display: block;
   width: 100%;
   height: auto;
+  margin-top: auto;
   border-radius: var(--radius-control);
+}
+
+/* "Select a tile..." above the generations grid: an instruction, so it
+   stands out in navy rather than reading as the end of the paragraph. */
+.section .demo-cta {
+  margin: var(--space-4) 0 0;
+  font-size: var(--font-size-ui);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-navy);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+/* The architecture diagram's vertical version is for phones only (see the
+   small-screen rules). */
+.flow-diagram-narrow {
+  display: none;
 }
 
 /* ---- Featured player ---- */
@@ -387,13 +423,27 @@
 
 /* ---- Results ---- */
 
+.results-chart-link {
+  display: block;
+  margin-top: var(--space-6);
+  text-decoration: none;
+}
+
 .results-chart {
   display: block;
   width: 100%;
   max-width: 100%;
-  margin-top: var(--space-6);
   border: var(--border);
   border-radius: var(--radius-surface);
+}
+
+/* Phones only: the chart is small there, so say it can be opened. */
+.results-chart-hint {
+  display: none;
+}
+
+.results-note {
+  margin-top: var(--space-4);
 }
 
 .results-table-wrap {
@@ -463,11 +513,156 @@
     padding: var(--space-2-5) var(--space-4);
   }
 
+  /* Brand on its own line, then the links on one row that scrolls sideways,
+     instead of wrapping onto three lines. */
+  .site-header nav {
+    flex-wrap: nowrap;
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+
+  .site-header nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .site-header nav a {
+    flex: none;
+  }
+
   .section {
     padding: var(--space-8) var(--space-4);
   }
 
   .hero {
     padding-top: var(--space-12);
+  }
+
+  /* Stats: two per row, values sized to fit on one line. */
+  .stats-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+
+  .stat-card {
+    padding: var(--space-3) var(--space-2);
+  }
+
+  .stat-card strong {
+    font-size: clamp(18px, 5.6vw, 24px);
+  }
+
+  /* Timeline: number above the title so the text gets the full width; only
+     the first four steps until "Show all" (PHONE_VISIBLE_STEPS in
+     sections/timeline.ts). */
+  .timeline-item {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+    padding: var(--space-3);
+  }
+
+  .timeline-step-word {
+    display: inline;
+  }
+
+  .timeline-item h3 {
+    font-size: var(--font-size-ui);
+  }
+
+  .timeline-item p {
+    font-size: var(--font-size-ui);
+    line-height: var(--leading-ui);
+  }
+
+  .timeline:not(.expanded) .timeline-item:nth-child(n + 5) {
+    display: none;
+  }
+
+  .timeline-toggle:not([hidden]) {
+    display: block;
+    margin: var(--space-4) auto 0;
+  }
+
+  .arch-card {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  /* The vertical version of the diagram (about 28 characters wide) fits a
+     phone at a readable size; the wide one would need sideways scrolling. */
+  .flow-diagram {
+    padding: var(--space-3) var(--space-4);
+    line-height: 1.5;
+  }
+
+  .flow-diagram-wide {
+    display: none;
+  }
+
+  .flow-diagram-narrow {
+    display: block;
+  }
+
+  /* Live demo: two tiles per row (five rows), kept compact. */
+  .grid-demo {
+    gap: var(--space-2-5);
+  }
+
+  .demo-tile {
+    padding: var(--space-2);
+  }
+
+  .demo-tile-meta {
+    font-size: var(--font-size-label);
+  }
+
+  .demo-tile-meta strong {
+    font-size: 15px;
+  }
+
+  /* Featured player: board, compact network and controls fit together. */
+  .featured-demo {
+    gap: var(--space-3);
+  }
+
+  .featured-board-wrap,
+  .featured-side {
+    padding: var(--space-3);
+  }
+
+  .featured-meta {
+    margin-bottom: var(--space-2);
+  }
+
+  /* Easy to tap, and the same height side by side. */
+  .featured-controls .btn,
+  .featured-controls .select {
+    min-height: 40px;
+  }
+
+  /* Results: all five columns fit. */
+  .results-chart-hint {
+    display: block;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-small);
+    color: var(--color-navy);
+    text-align: center;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .results-table {
+    font-size: 14px;
+  }
+
+  .results-table th,
+  .results-table td {
+    padding: var(--space-1-5) var(--space-1-5);
+    line-height: var(--leading-ui);
+  }
+
+  .results-table th {
+    font-size: 10px;
+    letter-spacing: 0.04em;
   }
 }

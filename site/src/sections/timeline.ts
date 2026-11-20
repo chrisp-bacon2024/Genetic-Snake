@@ -79,12 +79,16 @@ export const timelineItems: TimelineItem[] = [
   },
 ];
 
+/** On phones only the first steps show until "Show all" is pressed. Keep in
+ *  sync with the :nth-child(n+5) rule in styles/layout.css. */
+const PHONE_VISIBLE_STEPS = 4;
+
 export function renderTimeline(container: HTMLElement): void {
-  container.innerHTML = timelineItems
+  const items = timelineItems
     .map(
       (item) => `
         <article class="timeline-item">
-          <div class="timeline-step">${item.step}</div>
+          <div class="timeline-step"><span class="timeline-step-word">Step </span>${item.step}</div>
           <div>
             <h3>${item.title}</h3>
             <p>${item.body}${item.stat ? ` <span class="timeline-stat">(${item.stat})</span>` : ""}</p>
@@ -93,4 +97,22 @@ export function renderTimeline(container: HTMLElement): void {
       `,
     )
     .join("");
+
+  const hiddenOnPhones = timelineItems.length - PHONE_VISIBLE_STEPS;
+  container.innerHTML = `
+    <div class="timeline" id="timeline-list">${items}</div>
+    <button class="btn timeline-toggle" type="button" aria-expanded="false" aria-controls="timeline-list">
+      Show all ${timelineItems.length} steps
+    </button>
+  `;
+
+  const list = container.querySelector<HTMLElement>(".timeline")!;
+  const toggle = container.querySelector<HTMLButtonElement>(".timeline-toggle")!;
+  toggle.hidden = hiddenOnPhones <= 0;
+  toggle.addEventListener("click", () => {
+    const expanded = list.classList.toggle("expanded");
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.textContent = expanded ? "Show fewer steps" : `Show all ${timelineItems.length} steps`;
+    if (!expanded) list.scrollIntoView({ block: "start" });
+  });
 }

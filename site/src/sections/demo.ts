@@ -1,7 +1,8 @@
 import { BoardRenderer } from "../replay/BoardRenderer";
 import { NetworkVisualizer } from "../replay/NetworkVisualizer";
 import { ReplayPlayer } from "../replay/ReplayPlayer";
-import type { GenerationEntry, SiteManifest } from "../replay/types";
+import type { GenerationEntry, LiteReplayFrame, SiteManifest } from "../replay/types";
+import { outcomeLabel } from "./outcome";
 
 interface DemoTile {
   entry: GenerationEntry;
@@ -28,6 +29,7 @@ export class DemoSection {
   private featuredSpeed = 3;
   private activeGeneration = 215;
   private featuredRestartTimeout = 0;
+  private lastFeaturedFrame: LiteReplayFrame | null = null;
 
   constructor(
     private readonly manifest: SiteManifest,
@@ -53,8 +55,20 @@ export class DemoSection {
 
     this.featuredPlayer.setLoop(false);
     this.featuredPlayer.onFrame((frame) => {
+      this.lastFeaturedFrame = frame;
       this.featuredRenderer.draw(frame, { showRays: this.featuredSpeed < 10 });
       this.networkVisualizer.draw(frame);
+    });
+
+    // The network panel switches between its full and compact (phone)
+    // layouts by width, so redraw it when the window is resized or rotated.
+    let resizeTimer = 0;
+    window.addEventListener("resize", () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        this.networkVisualizer.resize(this.networkPanel.clientWidth || 280);
+        if (this.lastFeaturedFrame) this.networkVisualizer.draw(this.lastFeaturedFrame);
+      }, 150);
     });
     this.featuredPlayer.onComplete(() => this.scheduleFeaturedRestart());
 
@@ -198,8 +212,7 @@ export class DemoSection {
     this.featuredRenderer.resize(entry.grid_cols, entry.grid_rows, 380);
     this.networkVisualizer.resize(this.networkPanel.clientWidth || 280);
 
-    const durationSec = Math.ceil(entry.frame_count / entry.ticks_per_second);
-    this.featuredMeta.textContent = `Generation ${entry.generation} · score ${entry.score} · ${entry.grid_cols}×${entry.grid_rows} · ${entry.frame_count} frames (~${durationSec}s at 1×) · died: ${entry.death_cause}`;
+    this.featuredMeta.textContent = `Generation ${entry.generation} · ${entry.grid_cols}×${entry.grid_rows} board · score ${entry.score} · ${outcomeLabel(entry.death_cause)}`;
 
     this.featuredPlayer.stopLoop();
     await this.featuredPlayer.load(this.featuredReplayPath(entry));

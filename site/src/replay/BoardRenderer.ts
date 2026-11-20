@@ -33,6 +33,10 @@ export class BoardRenderer {
   private readonly ctx: CanvasRenderingContext2D;
   private layout: BoardLayout;
   private boardPixels: number;
+  /** Size in CSS pixels; the canvas itself is scaled by the pixel ratio so
+   *  the board stays sharp on high-density (phone) screens. */
+  private width = 0;
+  private height = 0;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -52,18 +56,22 @@ export class BoardRenderer {
     this.boardPixels = boardPixels;
     const cellSize = Math.max(12, Math.floor(boardPixels / Math.max(cols, rows)));
     const padding = 8;
-    this.canvas.width = cols * cellSize + padding * 2;
-    this.canvas.height = rows * cellSize + padding * 2 + 24;
-    this.layout = boardLayout(cols, rows, this.canvas.width);
+    const ratio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    this.width = cols * cellSize + padding * 2;
+    this.height = rows * cellSize + padding * 2 + 24;
+    this.canvas.width = Math.round(this.width * ratio);
+    this.canvas.height = Math.round(this.height * ratio);
+    this.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    this.layout = boardLayout(cols, rows, this.width);
   }
 
   draw(frame: LiteReplayFrame, options?: { showRays?: boolean }): void {
     const { ctx, layout } = this;
     const { cols, rows } = layout;
 
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.clearRect(0, 0, this.width, this.height);
     ctx.fillStyle = rgb(theme.background);
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.fillRect(0, 0, this.width, this.height);
 
     this.drawGrid();
 
@@ -447,11 +455,11 @@ export class BoardRenderer {
     ctx.fillStyle = rgb(theme.text);
     ctx.font = fonts.serif(600, 13);
     ctx.textAlign = "left";
-    ctx.fillText(`Score ${frame.score}`, layout.offsetX, this.canvas.height - 8);
+    ctx.fillText(`Score ${frame.score}`, layout.offsetX, this.height - 8);
     if (won) {
       ctx.fillStyle = rgb(theme.win);
       ctx.textAlign = "right";
-      ctx.fillText("Board cleared", layout.offsetX + layout.cols * layout.cellSize, this.canvas.height - 8);
+      ctx.fillText("Board cleared", layout.offsetX + layout.cols * layout.cellSize, this.height - 8);
     }
   }
 

@@ -18,7 +18,30 @@ export function renderArchitecture(container: HTMLElement): void {
         <p>Master smaller boards first (5×5, then 10×10) before training on the 20×20 win condition.</p>
       </article>
     </div>
-    <pre class="flow-diagram">GameStateEncoder ──► NeuralNetwork ──► masked argmax ──► Game.tick()
+    <!-- Two versions of the same diagram: wide (side by side) for larger
+         screens, vertical for phones. CSS shows exactly one. -->
+    <pre class="flow-diagram flow-diagram-narrow">┌─► GameStateEncoder
+│     │
+│     ▼
+│   NeuralNetwork
+│     │
+│     ▼
+│   masked argmax
+│     │
+│     ▼
+│   Game.tick()
+│     │
+│     ▼
+└── snake + grid state
+
+Each generation:
+  evaluate population
+    (parallel headless sim)
+  rank by fitness
+    → save best genome
+  evolve next generation
+    → checkpoint</pre>
+    <pre class="flow-diagram flow-diagram-wide">GameStateEncoder ──► NeuralNetwork ──► masked argmax ──► Game.tick()
         ▲                                              │
         └──────────── snake + grid state ──────────────┘
 

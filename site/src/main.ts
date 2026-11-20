@@ -88,10 +88,11 @@ function renderShell(): void {
         <p class="section-title section-label">Live demo</p>
         <h2>Ten generations at once</h2>
         <p>
-          Ten checkpoints in chronological order — two rows of five — from the first evolved rays
-          through 10×10 mastery to the final 20×20 win. Each tile replays the full saved run at
-          a fixed speed and restarts on its own. Click a tile to inspect it in the featured player.
+          Ten checkpoints in chronological order, from the first evolved rays through 10×10
+          mastery to the final 20×20 win. Each tile replays the full saved run and restarts on
+          its own.
         </p>
+        <p class="demo-cta">Select a tile to watch it in the featured player <span class="nowrap">below <span aria-hidden="true">↓</span></span></p>
         <div class="grid-demo" id="grid-demo"></div>
       </section>
 
