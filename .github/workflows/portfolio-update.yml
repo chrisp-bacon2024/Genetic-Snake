@@ -1,0 +1,25 @@
+# Redeploys christophermpalmer.com when this project changes.
+#
+# This file is identical in every project hosted on the portfolio. Its master
+# copy is templates/project-workflow/portfolio-update.yml in
+# https://github.com/chrisp-bacon2024/Portfolio. The work happens in that
+# repository's .github/workflows/notify-portfolio.yml.
+#
+# Needs the PORTFOLIO_DISPATCH_TOKEN repository secret (see docs/deployment.md
+# in the Portfolio repository). It does not affect this project's own GitHub
+# Pages site.
+
+name: Update portfolio
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  notify:
+    uses: chrisp-bacon2024/Portfolio/.github/workflows/notify-portfolio.yml@main
+    secrets:
+      PORTFOLIO_DISPATCH_TOKEN: ${{ secrets.PORTFOLIO_DISPATCH_TOKEN }}

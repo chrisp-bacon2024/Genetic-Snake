@@ -55,6 +55,9 @@
   max-width: calc(var(--content-max) + 2 * var(--space-6));
   margin: 0 auto;
   padding: var(--space-12) var(--space-6);
+  /* The header links (#featured...) stop below the sticky header instead
+     of hiding the section's label under it. */
+  scroll-margin-top: var(--space-6);
 }
 
 .section + .section {
@@ -453,7 +456,10 @@
 /* ---- Small screens ---- */
 
 @media (max-width: 700px) {
+  /* The links wrap onto several lines on phones, so a sticky header would
+     cover too much of the screen. It scrolls away with the page instead. */
   .site-header {
+    position: static;
     padding: var(--space-2-5) var(--space-4);
   }
 
