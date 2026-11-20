@@ -1,3 +1,8 @@
+/* Page base. Colours, type and the shared components (.btn, .btn-primary,
+   .page-title, .section-title, .select) come from the christophermpalmer.com
+   theme, linked in index.html. Use its variables (var(--color-...)) rather
+   than raw colours so theme changes reach this site. */
+
 @import "./layout.css";
 
 *,
@@ -12,22 +17,44 @@ html {
 
 body {
   margin: 0;
-  font-family: "IBM Plex Sans", system-ui, sans-serif;
-  background: rgb(18, 18, 24);
-  color: rgb(220, 220, 230);
-  line-height: 1.6;
+  font-family: var(--font-serif);
+  font-size: var(--font-size-body);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: var(--leading-body);
 }
 
 a {
-  color: rgb(100, 200, 255);
-  text-decoration: none;
+  color: var(--color-navy);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 a:hover {
-  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-decoration-color: var(--color-sky);
+}
+
+:where(a, button, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-navy);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--color-focus-halo);
 }
 
 code,
-.mono {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
+pre {
+  font-family: var(--font-mono);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+  }
 }

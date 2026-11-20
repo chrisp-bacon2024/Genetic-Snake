@@ -35,8 +35,8 @@ function renderShell(): void {
 
     <main>
       <section class="section hero">
-        <p class="section-label">Portfolio demo</p>
-        <h1>Snake brains evolved, not trained.</h1>
+        <p class="section-title section-label">Portfolio demo</p>
+        <h1 class="page-title">Snake brains evolved, not trained.</h1>
         <p class="hero-lead">
           A genetic algorithm evolves the weights of a small neural network that plays Snake —
           no backpropagation, no labeled dataset. Watch generations improve from random flailing
@@ -55,7 +55,7 @@ function renderShell(): void {
       </section>
 
       <section class="section" id="challenge">
-        <p class="section-label">The challenge</p>
+        <p class="section-title section-label">The challenge</p>
         <h2>Why this problem is hard</h2>
         <p>
           On a 20×20 board the snake must survive thousands of steps, avoid its growing body,
@@ -73,19 +73,19 @@ function renderShell(): void {
       </section>
 
       <section class="section" id="journey">
-        <p class="section-label">Engineering journey</p>
+        <p class="section-title section-label">Engineering journey</p>
         <h2>How the solution evolved</h2>
         <div id="timeline-root"></div>
       </section>
 
       <section class="section" id="architecture">
-        <p class="section-label">System design</p>
+        <p class="section-title section-label">System design</p>
         <h2>How it works</h2>
         <div id="architecture-root"></div>
       </section>
 
       <section class="section" id="live">
-        <p class="section-label">Live demo</p>
+        <p class="section-title section-label">Live demo</p>
         <h2>Ten generations at once</h2>
         <p>
           Ten checkpoints in chronological order — two rows of five — from the first evolved rays
@@ -96,7 +96,7 @@ function renderShell(): void {
       </section>
 
       <section class="section" id="featured">
-        <p class="section-label">Featured run</p>
+        <p class="section-title section-label">Featured run</p>
         <h2>Vision rays and network outputs</h2>
         <p id="featured-intro">
           The featured player shows heading-relative vision rays and a live neural-network panel
@@ -114,7 +114,7 @@ function renderShell(): void {
               <button class="btn" id="featured-play" type="button">Pause</button>
               <label>
                 Speed
-                <select class="speed-select" id="featured-speed">
+                <select class="select speed-select" id="featured-speed">
                   <option value="1">1×</option>
                   <option value="3" selected>3×</option>
                   <option value="10">10×</option>
@@ -124,7 +124,7 @@ function renderShell(): void {
               </label>
               <label>
                 Generation
-                <select class="speed-select" id="featured-generation"></select>
+                <select class="select speed-select" id="featured-generation"></select>
               </label>
             </div>
           </div>
@@ -132,7 +132,7 @@ function renderShell(): void {
       </section>
 
       <section class="section" id="results">
-        <p class="section-label">Results</p>
+        <p class="section-title section-label">Results</p>
         <h2>Training progress</h2>
         <div id="results-root"></div>
       </section>
@@ -178,6 +178,6 @@ bootstrap().catch((error) => {
   console.error(error);
   const app = document.getElementById("app");
   if (app) {
-    app.innerHTML = `<pre style="padding:2rem;color:#f88">Failed to load site: ${String(error)}</pre>`;
+    app.innerHTML = `<pre class="load-error">Failed to load site: ${String(error)}</pre>`;
   }
 });

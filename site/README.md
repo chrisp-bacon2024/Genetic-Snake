@@ -40,7 +40,7 @@ npm install
 npm run dev
 ```
 
-Open the URL printed by Vite (usually `http://localhost:5173`).
+Open `http://localhost:8080` (set in `vite.config.ts`).
 
 ## Production build
 
@@ -51,3 +51,14 @@ npm run preview
 ```
 
 Built files land in `site/dist/` with relative asset paths (`base: './'`) for future GitHub Pages deployment.
+
+## Styling
+
+The site uses the shared [christophermpalmer.com](https://christophermpalmer.com/) theme, so it matches the portfolio and the Pathfinding Visualizer:
+
+- `index.html` links `https://christophermpalmer.com/shared/theme/v1/theme.css` before the site's own CSS. It provides the brand tokens (colours, serif type, spacing) and shared components (`.btn`, `.btn-primary`, `.page-title`, `.section-title`, `.select`). The page needs an internet connection to look right, including with `npm run dev`.
+- `src/styles/*.css` hold only this page's layout, written with the theme's variables (`var(--color-navy)`, `var(--space-4)`…) rather than raw colours.
+- The canvases read the same variables at runtime (`src/styles/theme.ts`), so the board and network panel follow theme changes too. The snake, apple and vision-ray colours are this project's own and stay in `theme.ts`.
+- **Font exception (brand guidelines §7.8):** the network panel's labels of 11px and below use the system sans-serif, because serif text that small is hard to read in a dense data display. Everything else is serif, and the flow diagram is monospace because it's a code-style diagram.
+
+The pygame app (`src/`) keeps its original dark colours from `src/config.py`.

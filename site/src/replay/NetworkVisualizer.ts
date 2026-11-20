@@ -1,4 +1,4 @@
-import { lerpColor, rgb, theme } from "../styles/theme";
+import { fonts, lerpColor, rgb, theme } from "../styles/theme";
 import { inputFeatureColor } from "./neuronColors";
 import type { DirectionName, LiteReplayFrame } from "./types";
 
@@ -77,7 +77,7 @@ export class NetworkVisualizer {
       ctx.fillStyle = rgb(theme.panel);
       ctx.fillRect(0, 0, width, this.canvas.height);
       ctx.fillStyle = rgb(theme.textDim);
-      ctx.font = "13px IBM Plex Mono, monospace";
+      ctx.font = fonts.serif(400, 13);
       ctx.textAlign = "center";
       ctx.fillText("Neural data unavailable", width / 2, this.canvas.height / 2);
       ctx.fillText("(use full replay export)", width / 2, this.canvas.height / 2 + 18);
@@ -110,7 +110,7 @@ export class NetworkVisualizer {
   private drawTitle(y: number, width: number): number {
     const { ctx } = this;
     ctx.fillStyle = rgb(theme.text);
-    ctx.font = "600 14px IBM Plex Mono, monospace";
+    ctx.font = fonts.serif(700, 14);
     ctx.textAlign = "center";
     ctx.fillText("Neural Net", width / 2, y + 12);
     return y + 24;
@@ -119,12 +119,12 @@ export class NetworkVisualizer {
   private drawLayerLabel(text: string, y: number, width: number, suffix?: string): number {
     const { ctx } = this;
     ctx.fillStyle = rgb(theme.textDim);
-    ctx.font = "11px IBM Plex Mono, monospace";
+    ctx.font = fonts.small(600, 11);
     ctx.textAlign = "center";
     ctx.fillText(text, width / 2, y + 10);
     let bottom = y + 14;
     if (suffix) {
-      ctx.font = "9px IBM Plex Mono, monospace";
+      ctx.font = fonts.small(400, 9);
       ctx.fillText(suffix, width / 2, bottom + 10);
       bottom += 12;
     }
@@ -144,7 +144,7 @@ export class NetworkVisualizer {
     const startX = margin + (usable - gridWidth) / 2 + radius;
     const firstRowCenterY = y + radius;
 
-    ctx.font = "9px IBM Plex Mono, monospace";
+    ctx.font = fonts.small(400, 9);
     ctx.fillStyle = rgb(theme.textDim);
     ctx.textAlign = "right";
     const legendX = startX - radius - 6;
@@ -288,10 +288,11 @@ export class NetworkVisualizer {
       ctx.strokeStyle = rgb(lerpColor(theme.controlBorder, theme.controlActive, activation));
       ctx.lineWidth = 2;
       ctx.stroke();
-      ctx.fillStyle = rgb(lerpColor(theme.textDim, theme.text, activation));
+      // Light glyph once the fill is dark enough (it darkens toward navy).
+      ctx.fillStyle = rgb(activation > 0.5 ? theme.panel : lerpColor(theme.textDim, theme.text, activation));
     }
 
-    ctx.font = `700 ${Math.max(12, size / 2)}px IBM Plex Mono, monospace`;
+    ctx.font = fonts.small(700, Math.max(12, size / 2));
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(directionGlyph(direction), cx, cy + 1);

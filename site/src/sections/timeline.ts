@@ -87,7 +87,7 @@ export function renderTimeline(container: HTMLElement): void {
           <div class="timeline-step">${item.step}</div>
           <div>
             <h3>${item.title}</h3>
-            <p>${item.body}${item.stat ? ` <span class="mono">(${item.stat})</span>` : ""}</p>
+            <p>${item.body}${item.stat ? ` <span class="timeline-stat">(${item.stat})</span>` : ""}</p>
           </div>
         </article>
       `,

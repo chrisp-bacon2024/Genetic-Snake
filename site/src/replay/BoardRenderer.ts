@@ -1,5 +1,5 @@
-import { lerpColor, rgb, snakeLayout, theme } from "../styles/theme";
-import { inputFeatureColor, proximityActivation } from "./neuronColors";
+import { fonts, lerpColor, overlayVeil, rgb, snakeLayout, theme } from "../styles/theme";
+import { proximityActivation, rayColor } from "./neuronColors";
 import type { LiteReplayFrame } from "./types";
 import { DIRECTION_DELTA, relativeRayDeltas } from "./types";
 
@@ -445,7 +445,7 @@ export class BoardRenderer {
   private drawHud(frame: LiteReplayFrame, won: boolean): void {
     const { ctx, layout } = this;
     ctx.fillStyle = rgb(theme.text);
-    ctx.font = "600 12px IBM Plex Mono, monospace";
+    ctx.font = fonts.serif(600, 13);
     ctx.textAlign = "left";
     ctx.fillText(`Score ${frame.score}`, layout.offsetX, this.canvas.height - 8);
     if (won) {
@@ -459,10 +459,10 @@ export class BoardRenderer {
     const { ctx, layout } = this;
     const boardWidth = layout.cols * layout.cellSize;
     const boardHeight = layout.rows * layout.cellSize;
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillStyle = overlayVeil;
     ctx.fillRect(layout.offsetX, layout.offsetY, boardWidth, boardHeight);
     ctx.fillStyle = rgb(won ? theme.win : theme.gameOver);
-    ctx.font = "700 16px IBM Plex Sans, sans-serif";
+    ctx.font = fonts.serif(700, 18);
     ctx.textAlign = "center";
     ctx.fillText(message, layout.offsetX + boardWidth / 2, layout.offsetY + boardHeight / 2);
   }
@@ -482,7 +482,7 @@ export class BoardRenderer {
       const cast = castRay(headX, headY, dx, dy, layout.cols, layout.rows, body);
       const hitsBody = hitsBodyFirst(cast);
       const value = obstacleProximity(cast);
-      const color = inputFeatureColor(hitsBody ? 2 : 0, value);
+      const color = rayColor(hitsBody ? 2 : 0, value);
       const { endX, endY } = rayEndCell(headX, headY, dx, dy, cast);
       const [x0, y0] = this.cellCenter(headX, headY);
       const [x1, y1] = this.cellCenter(endX, endY);
@@ -506,7 +506,7 @@ export class BoardRenderer {
       if (inputs && inputs.length >= deltas.length * 3) {
         foodAlign = Math.max(...Array.from({ length: deltas.length }, (_, i) => inputs[i * 3 + 1] ?? 0));
       }
-      const foodColor = inputFeatureColor(1, foodAlign);
+      const foodColor = rayColor(1, foodAlign);
       const [x0, y0] = this.cellCenter(headX, headY);
       const [x1, y1] = this.cellCenter(foodX, foodY);
       ctx.strokeStyle = rgb(foodColor);
